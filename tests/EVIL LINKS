@@ -1,0 +1,34 @@
+@name EVIL LINKS
+@persist [WIRELINKS]:table [ENT]:entity [INTERVAL]:number [CUR_INDEX, THRESHOLD]:number
+
+if(first() || dupefinished() || duped()) 
+{
+    WIRELINKS = table()
+    
+    ENT = entity():isWeldedTo()
+    
+    if(ENT:isValid() & ENT:type() == "acf_gearbox") 
+    { 
+        WIRELINKS["GEARBOX", wirelink] = ENT:wirelink()        
+        print("WIRELINK CREATED!")
+    }
+    
+    THRESHOLD = 8
+    
+    INTERVAL = 2000
+    
+    interval(INTERVAL)
+} elseif(clk()) 
+{
+    CUR_INDEX = CUR_INDEX + 1
+    
+    if(CUR_INDEX > THRESHOLD) { CUR_INDEX = 1 }
+    
+    WIRELINKS["GEARBOX", wirelink]["Gear", number] = CUR_INDEX
+    
+    # local Cur_Gear = WIRELINKS["GEARBOX", wirelink]["Gear", number]
+    
+   #  print(Cur_Gear)
+
+    interval(INTERVAL)
+} else { interval(INTERVAL) }
