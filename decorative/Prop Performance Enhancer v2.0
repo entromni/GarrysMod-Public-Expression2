@@ -1,0 +1,36 @@
+@name Prop Performance Enhancer v2.0
+@inputs [Active]:number
+@persist [Components]:array
+@persist [Blacklist]:table
+
+if(first()|duped()|dupefinished()) 
+
+{
+
+Components = entity():getConnectedEntities()
+
+Blacklist = table("models/sprops/trans/miscwheels/tank30.mdl"=1, "models/sprops/trans/misc/antenna_96.mdl"=1, "models/sprops/trans/misc/antenna_64.mdl"=1, "models/sprops/trans/misc/antenna_32.mdl"=1)
+
+}
+
+if(Active && changed(Active)) 
+{
+
+    foreach(K, V:entity=Components) 
+    {
+#         if(V:type() == "prop_physics" & V:model() != "models/sprops/trans/miscwheels/tank30.mdl") { V:propDraw(0) }
+         if(V:type() == "prop_physics" & !Blacklist[V:model(), number]) { V:propDraw(1), V:setAlpha(0) }
+    }
+} 
+
+if(!Active && changed(Active)) 
+{
+
+    foreach(K, V:entity=Components) 
+    {
+        if(V:type() == "prop_physics") { V:propDraw(1), V:setAlpha(255) }
+    }
+}
+
+
+
