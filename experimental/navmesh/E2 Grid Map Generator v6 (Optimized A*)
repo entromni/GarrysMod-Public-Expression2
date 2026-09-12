@@ -1,0 +1,404 @@
+@name E2 Grid Map Generator v6 (Optimized A*)
+
+@outputs [Grid, World_Borders, World_Ground_Points, Visited_Points, Path_Array]:table
+@outputs [EndPos]:vector
+
+@persist [Grid, World_Borders, World_Ground_Points, Visited_Points, Path_Array]:table
+@persist [Ground_Valid, Closed_Set, G_Scores, Parent_Idx]:table
+@persist [Heap_Idx, Heap_F]:table
+@persist [EndPos, Start_Anchor, Wall_Point, Wall_Tangent, Wall_Normal, Owner_Start_Pos]:vector
+@persist [Ranger_Main]:ranger
+@persist [State, Rows, Columns, Corner_Count, Max_Corners, Trace_Tries]:number
+@persist [Grid_X, Grid_Y, Scan_Index, Found_Path]:number
+@persist [Astar_Phase, Astar_Current, Goal_Node, Total_Nodes, Start_Node]:number
+@persist [Heap_Size, Max_Z_Step]:number
+@persist [Nearest_Scan_Index, Nearest_Best_I, Nearest_Best_Dist]:number
+
+function number gridIndex(Row:number, Col:number)
+{
+    if(Row < 0 | Row >= Rows | Col < 0 | Col >= Columns) { return 0 }
+    return Row * Columns + Col + 1
+}
+
+function void heapPush(Idx:number, F:number)
+{
+    Heap_Size += 1
+    Heap_Idx[Heap_Size, number] = Idx
+    Heap_F[Heap_Size, number]   = F
+
+    local Child = Heap_Size
+    while(Child > 1)
+    {
+        local Parent = floor(Child / 2)
+        if(Heap_F[Parent, number] <= Heap_F[Child, number]) { break }
+
+        local TF = Heap_F[Parent, number]
+        local TI = Heap_Idx[Parent, number]
+        Heap_F[Parent, number]   = Heap_F[Child, number]
+        Heap_Idx[Parent, number] = Heap_Idx[Child, number]
+        Heap_F[Child, number]    = TF
+        Heap_Idx[Child, number]  = TI
+
+        Child = Parent
+    }
+}
+
+function number heapPopMin()
+{
+    if(Heap_Size == 0) { return 0 }
+
+    local Root_Idx = Heap_Idx[1, number]
+
+    Heap_Idx[1, number] = Heap_Idx[Heap_Size, number]
+    Heap_F[1, number]   = Heap_F[Heap_Size, number]
+    Heap_Idx[Heap_Size, number] = 0
+    Heap_F[Heap_Size, number]   = 0
+    Heap_Size -= 1
+
+    local Parent = 1
+    while(1)
+    {
+        local Left     = Parent * 2
+        local Right    = Left + 1
+        local Smallest = Parent
+
+        if(Left  <= Heap_Size & Heap_F[Left, number]  < Heap_F[Smallest, number]) { Smallest = Left }
+        if(Right <= Heap_Size & Heap_F[Right, number] < Heap_F[Smallest, number]) { Smallest = Right }
+
+        if(Smallest == Parent) { break }
+
+        local TF = Heap_F[Parent, number]
+        local TI = Heap_Idx[Parent, number]
+        Heap_F[Parent, number]    = Heap_F[Smallest, number]
+        Heap_Idx[Parent, number]  = Heap_Idx[Smallest, number]
+        Heap_F[Smallest, number]  = TF
+        Heap_Idx[Smallest, number]= TI
+
+        Parent = Smallest
+    }
+
+    return Root_Idx
+}
+
+if(first())
+{
+    World_Borders       = table()
+    World_Ground_Points = table()
+    Visited_Points      = table()
+    Path_Array          = table()
+    Grid                = table()
+    Ground_Valid        = table()
+    Closed_Set          = table()
+    G_Scores            = table()
+    Parent_Idx          = table()
+    Heap_Idx            = table()
+    Heap_F              = table()
+
+    rangerFlags(" ")
+    rangerPersist(1)
+
+    Rows        = 100
+    Columns     = 100
+    Max_Corners = 4
+
+    Corner_Count       = 0
+    Trace_Tries        = 0
+    Grid_X             = 0
+    Grid_Y             = 0
+    Scan_Index         = 0
+    Found_Path         = 0
+    Astar_Phase        = 0
+    Astar_Current      = 0
+    Goal_Node          = 0
+    Total_Nodes        = 0
+    Start_Node         = 0
+    Heap_Size          = 0
+    Nearest_Scan_Index = 0
+    Nearest_Best_I     = 0
+    Nearest_Best_Dist  = 0
+
+    Max_Z_Step  = 72
+    State       = 0
+
+    EndPos = entity():pos()
+
+    holoCreate(1)
+    holoColor(1, vec(255, 0, 0))
+    holoScale(1, vec(6))
+    holoPos(1, EndPos)
+
+    holoCreate(7)
+    holoColor(7, vec(0, 150, 255))
+    holoScale(7, vec(12))
+
+    Ranger_Main = rangerOffset(50000, entity():pos(), vec(0, 0, 1))
+}
+
+if(State == 0)
+{
+    if(Ranger_Main:hitWorld())
+    {
+        Start_Anchor = Ranger_Main:pos()
+
+        Ranger_Main = rangerOffset(50000, Start_Anchor, vec(1, 0, 0))
+
+        if(Ranger_Main:hitWorld())
+        {
+            Wall_Point  = Ranger_Main:pos()
+            Wall_Normal = Ranger_Main:hitNormal()
+            State = 1
+        }
+    }
+}
+elseif(State == 1)
+{
+    Trace_Tries += 1
+
+    Wall_Tangent = (Wall_Normal:cross(vec(0, 0, 1))):normalized()
+
+    Ranger_Main = rangerOffset(50000, Wall_Point + Wall_Tangent * 8, Wall_Tangent)
+
+    if(Ranger_Main:hitWorld())
+    {
+        Corner_Count += 1
+        World_Borders[Corner_Count, vector] = Ranger_Main:pos()
+
+        holoCreate(1 + Corner_Count)
+        holoColor(1 + Corner_Count, vec(0, 255, 0))
+        holoScale(1 + Corner_Count, vec(10))
+        holoPos(1 + Corner_Count, Ranger_Main:pos())
+
+        Wall_Point  = Ranger_Main:pos()
+        Wall_Normal = Ranger_Main:hitNormal()
+
+        if(Corner_Count >= Max_Corners)
+        {
+            print("Grid generator: traced ", Corner_Count, " corners")
+            State = 2
+        }
+    }
+
+    if(Trace_Tries > 60 & Corner_Count < Max_Corners)
+    {
+        print("Grid generator: FAILED to trace corners (only found ", Corner_Count, ") - check starting position")
+        State = -1
+    }
+}
+elseif(State == 2)
+{
+    local Scan_Complete = 1
+
+    for(X = Grid_X, Rows - 1, 1)
+    {
+        local Row_Complete = 1
+
+        for(Y = Grid_Y, Columns - 1, 1)
+        { if(!perf()) { Grid_X = X, Grid_Y = Y, Scan_Complete = 0, Row_Complete = 0, break }
+
+            local U = X / (Rows - 1)
+            local V = Y / (Columns - 1)
+
+            local BottomEdge = World_Borders[2, vector] * U + World_Borders[1, vector] * (1 - U)
+            local TopEdge    = World_Borders[3, vector] * U + World_Borders[4, vector] * (1 - U)
+
+            # pushVector keeps this dense/sequential, so index == X*Columns+Y+1
+            Grid:pushVector(BottomEdge * V + TopEdge * (1 - V))
+        }
+
+        if(!Row_Complete) { break }
+
+        Grid_Y = 0
+    }
+
+    if(Scan_Complete)
+    {
+        Grid_X = 0
+        Grid_Y = 0
+        print("Grid generator: ", Grid:count(), " grid samples built")
+        State = 3
+    }
+}
+elseif(State == 3)
+{
+    local Scan_Complete = 1
+
+    for(I = Scan_Index, Grid:count() + 1, 1)
+    { if(!perf()) { Scan_Index = I, Scan_Complete = 0, break }
+
+        if(I > Grid:count()) { break }
+
+        Ranger_Main = rangerOffset(50000, Grid[I, vector], vec(0, 0, -1))
+
+        if(Ranger_Main:hitWorld())
+        {
+            World_Ground_Points[I, vector] = Ranger_Main:pos()
+            Ground_Valid[I, number]        = 1
+        }
+    }
+
+    if(Scan_Complete)
+    {
+        Scan_Index      = 0
+        Total_Nodes     = Grid:count()
+        Owner_Start_Pos = owner():pos()
+        print("Grid generator: ", Total_Nodes, " grid slots scanned")
+        State = 4
+    }
+}
+elseif(State == 4)
+{
+    local Scan_Complete = 1
+
+    for(I = max(1, Nearest_Scan_Index), Total_Nodes, 1)
+    { if(!perf()) { Nearest_Scan_Index = I, Scan_Complete = 0, break }
+
+        if(Ground_Valid[I, number] == 1)
+        {
+            local D = World_Ground_Points[I, vector]:distance(Owner_Start_Pos)
+            if(Nearest_Best_I == 0 | D < Nearest_Best_Dist)
+            {
+                Nearest_Best_I    = I
+                Nearest_Best_Dist = D
+            }
+        }
+    }
+
+    if(Scan_Complete)
+    {
+        Nearest_Scan_Index = 0
+        Start_Node = Nearest_Best_I
+
+        if(Start_Node == 0)
+        {
+            print("A*: no valid ground points found - aborting")
+            Found_Path = -1
+        }
+        else
+        {
+            print("A*: start node = ", Start_Node, " (", round(Nearest_Best_Dist), " units from owner)")
+        }
+
+        State = 5
+    }
+}
+elseif(State == 5)
+{
+    if(!Found_Path)
+    {
+        if(Astar_Phase == 0)
+        {
+            Heap_Size = 0
+            G_Scores[Start_Node, number] = 1
+            local F0 = World_Ground_Points[Start_Node, vector]:distance(EndPos)
+            heapPush(Start_Node, F0)
+
+            print("A*: initialised | nodes = ", Total_Nodes, " | start = ", Start_Node)
+            Astar_Phase = 1
+        }
+        elseif(Astar_Phase == 1)
+        {
+            for(I = 1, 100000, 1)
+            {
+                if(!perf()) { break }
+
+                if(Heap_Size == 0)
+                {
+                    print("A*: open set exhausted - no path to goal")
+                    Found_Path  = -1
+                    break
+                }
+
+                local Current = heapPopMin()
+
+                # stale/duplicate heap entry (lazy deletion) - skip it
+                if(Closed_Set[Current, number] == 1) { continue }
+
+                Closed_Set[Current, number] = 1
+                Astar_Current = Current
+
+                local Current_Pos = World_Ground_Points[Current, vector]
+                holoPos(7, Current_Pos)
+
+                if(Current_Pos:distance(EndPos) < 1500)
+                {
+                    Goal_Node   = Current
+                    Astar_Phase = 3
+                    break
+                }
+
+                local Current_G = G_Scores[Current, number] - 1
+                local CurRow    = floor((Current - 1) / Columns)
+                local CurCol    = (Current - 1) % Columns
+
+                for(DR = -1, 1, 1)
+                {
+                    for(DC = -1, 1, 1)
+                    {
+                        if(DR == 0 & DC == 0) { continue }
+
+                        local NIdx = gridIndex(CurRow + DR, CurCol + DC)
+                        if(NIdx == 0) { continue }
+                        if(Ground_Valid[NIdx, number] == 0) { continue }
+                        if(Closed_Set[NIdx, number] == 1) { continue }
+
+                        local NPos = World_Ground_Points[NIdx, vector]
+                        local DZ   = abs(NPos:z() - Current_Pos:z())
+                        if(DZ > Max_Z_Step) { continue }
+
+                        local Tent_G = Current_G + Current_Pos:distance(NPos)
+
+                        # G_Scores == 0 means unset (infinity). Both sides
+                        # of the comparison are in the "+1 offset" space.
+                        if(G_Scores[NIdx, number] == 0 | Tent_G + 1 < G_Scores[NIdx, number])
+                        {
+                            G_Scores[NIdx, number]   = Tent_G + 1
+                            Parent_Idx[NIdx, number] = Current
+                            heapPush(NIdx, Tent_G + NPos:distance(EndPos))
+                        }
+                    }
+                }
+            }
+        }
+        elseif(Astar_Phase == 3)
+        {
+            local Steps = table()
+            local N     = Goal_Node
+
+            for(I = 1, Total_Nodes, 1)
+            {
+                if(N == 0) { break }
+                Steps:pushNumber(N)
+                N = Parent_Idx[N, number]
+            }
+
+            Path_Array:pushVector(Owner_Start_Pos)
+
+            for(I = Steps:count(), 1, -1)
+            {
+                local Idx = Steps[I, number]
+                local P   = World_Ground_Points[Idx, vector]
+                Path_Array:pushVector(P)
+                Visited_Points[P:toString(), vector] = P
+            }
+
+            print("A*: path complete - ", Path_Array:count(), " waypoints")
+            Found_Path  = 1
+            Astar_Phase = 4
+        }
+    }
+}
+
+if(Found_Path == 1 & changed(Found_Path))
+{
+    for(I = 1, Path_Array:count() + 1, 1)
+    { if(I > Path_Array:count()) { break }
+
+        holoCreate(20 + I)
+        holoColor(20 + I, vec(155, 0, 75))
+        holoScale(20 + I, vec(10))
+        holoPos(20 + I, Path_Array[I, vector])
+    }
+}
+
+#interval(200)
+runOnTick(1)
