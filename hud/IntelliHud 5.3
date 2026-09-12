@@ -1,0 +1,657 @@
+@name IntelliHud 5.3
+### Original Author: Zan
+### Revamp: structural cleanup + bugfixes, same wire I/O as IntelliHud 4.0
+
+#================================================================
+# INPUTS
+#================================================================
+
+@inputs [EGP, Cam]:wirelink
+@inputs [HitPos]:vector [Dist]:number
+@inputs [FOV]:number
+@inputs [MainGun, Gun2, Gun3, Seat, Base]:entity
+@inputs [Engine_RPM, Gearbox_Ratio, Cur_Gear]:number
+@inputs [Active, MuzzleVel]:number
+@inputs [Is_AutoTargeting]:number
+@inputs [Set_Mark]:number
+@inputs [Drop]:number
+@inputs [Lead]:vector
+@inputs [Radar_Positions]:array
+@inputs [Tanks]:table
+
+@inputs [Cam_Pos]:vector
+@inputs [Cam_Ang]:angle
+@inputs [IR_Hit_Positions]:array
+@inputs [IR_Hit_Count]:number
+@inputs [IR_Has_Target]:number
+
+#================================================================
+# OUTPUTS
+#================================================================
+
+@outputs [TimeLeft]:number
+@outputs [FuelCap]:number
+@outputs [Last, Last_Vel]:array
+@outputs [Detected]:number
+
+#================================================================
+# PERSISTENT STATE
+#================================================================
+
+@persist [Ranger]:ranger
+
+@persist [FOV]:number
+
+@persist [Detected]:number
+
+@persist [IR_Screen_Res, IR_Screen_Half, IR_FOV_Per_Pixel]:number
+@persist [IR_Screen_Origin]:vector2
+@persist [IR_Pixel_Size, IR_Max_Blips, IR_Lerp_Factor]:number
+@persist [IR_Blip_Screen_Pos, IR_Blip_Target_Pos, IR_Blip_Active]:array
+
+@persist [Target_HitPos, Cur_HitPos]:vector
+
+@persist [ScrC]:vector2
+
+@persist [Last, Last_Vel]:array
+
+@persist [TA_Yaw_Offset]:number
+@persist [Trace]:ranger
+@persist [T]:number
+@persist [Color, Color2, Color3, Color4]:vector
+@persist [Components]:array
+@persist [Speed]:number
+@persist [Cur_Pos]:vector
+@persist [Self]:entity
+
+@persist [Scouts, AI_Team_Members]:gtable
+@persist [Squad_Markers]:gtable
+
+@persist [MainGun_Mag_Rounds, Gun2_Mag_Rounds, Gun3_Mag_Rounds]:number
+@persist [MainGun_Cal, Gun2_Cal, Gun3_Cal]:number
+@persist [MainGun_Ammo_Count, Gun2_Ammo_Count, Gun3_Ammo_Count]:number
+@persist [MainGun_Ammo_Type, Gun2_Ammo_Type, Gun3_Ammo_Type]:string
+@persist [ReadyCount, ReadyCount_2, ReadyCount_3]:string
+
+@persist [CurFuelTank]:number
+
+@persist [Interval, Lerp_Interval, Lerp_Factor]:number
+
+### Color  = main HUD frame color
+### Color2 = text color
+### Color3 = 3D cursor color (ready)
+### Color4 = 3D cursor color (reloading)
+
+#================================================================
+# ONE-TIME SETUP
+#================================================================
+if(first() | dupefinished() | duped())
+{
+    Self = entity()
+    
+    Interval = 50
+
+    TA_Yaw_Offset = 90
+
+    FuelCap = 0
+    
+    # Lerp_Factor = 0.5
+    
+    # Lerp_Interval = Interval / 4
+
+    TimeLeft = 0
+
+    CurFuelTank = 1
+    Fuel1_Activate = 1
+
+    Squad_Markers = gTable("Squad_Markers", 1)
+    Squad_Markers[1, table] = table()
+
+    Scouts = gTable("AI_Hud_Commands", 1)
+    Scouts[1, array] = array()
+    Scouts[2, array] = array()
+    Scouts[3, array] = array()
+    Scouts[4, table] = table()
+    Scouts[5, array] = array()
+
+    AI_Team_Members = gTable("AI_Team_1_Members", 1)
+    AI_Team_Members[1, table] = table()
+
+    Components = Self:getConnectedEntities()
+
+    Color  = vec(125, 0, 95)
+    Color2 = vec(127, 0, 255)
+    Color3 = vec(163, 90, 144)
+    Color4 = vec(235, 0, 0)
+
+    rangerPersist(0)
+    rangerFilter(Components)
+    rangerPersist(1)
+
+    Last = array()
+    Cur_Pos = vec(0)
+
+    IR_Screen_Res = 32
+    IR_Screen_Half = IR_Screen_Res / 2
+    IR_FOV_Per_Pixel = 0.75
+    IR_Screen_Origin = vec2(350, 250)
+    IR_Pixel_Size = 7
+    IR_Max_Blips = 5
+    IR_Lerp_Factor = 0.22
+    
+    IR_Blip_Screen_Pos = array()
+    IR_Blip_Target_Pos = array()
+    IR_Blip_Active = array()
+    for(I = 1, IR_Max_Blips)
+    {
+        IR_Blip_Screen_Pos[I, vector2] = vec2(350, 250)
+        IR_Blip_Target_Pos[I, vector2] = vec2(350, 250)
+        IR_Blip_Active[I, number] = 0
+        if(I >= IR_Max_Blips) { break }
+    }
+}
+
+#================================================================
+# HELPER FUNCTIONS
+#================================================================
+function vector array:averageVector()
+{
+    local Total = vec()
+    for(I = 1, This:count())
+    {
+        Total = (Total + This[I, vector])
+    }
+    return (Total / This:count())
+}
+
+#================================================================
+# ACTIVATION / DEACTIVATION
+#================================================================
+if(changed(Active))
+{
+    if(Active)
+    {
+        TimeLeft = 0
+
+        Driver = Seat:driver()
+        ScrRes = egpScrSize(Driver ?: owner())
+
+        Y = ScrRes:y()
+        X = ScrRes:x()
+        ScrC = vec2(X / 2, Y / 2)
+
+        EGP:egpClear()
+
+        #------------------------------------------------------------
+        # 3D cursor (ballistic drop reticle)  LARGER, SHARPER
+        # Box: 50x50  |  Arms: 2570px  |  Brackets: 20px offset
+        # Center pip: 6x6
+        #------------------------------------------------------------
+        EGP:egpBoxOutline(2, vec2(0), vec2(50))
+        EGP:egpLine(3, vec2(25, 0),   vec2(70, 0))     # right arm
+        EGP:egpLine(4, vec2(50, 20),  vec2(90, 20))    # right upper bracket
+        EGP:egpLine(5, vec2(50, -20), vec2(90, -20))   # right lower bracket
+        EGP:egpLine(6, vec2(-25, 0),  vec2(-70, 0))    # left arm
+        EGP:egpLine(7, vec2(-50, 20), vec2(-90, 20))   # left upper bracket
+        EGP:egpLine(8, vec2(-50, -20),vec2(-90, -20))  # left lower bracket
+        EGP:egpLine(9, vec2(0, 25),   vec2(0, 70))     # top arm
+        EGP:egpLine(10,vec2(0, -25),  vec2(0, -70))    # bottom arm
+        EGP:egpBoxOutline(11, vec2(), vec2(6))          # center pip
+
+        EGP:egp3DTracker(1, vec(0))
+        for(I = 2, 11, 1)
+        {
+            EGP:egpPos(I, (EGP:egpPos(I) + EGP:egpPos(1)))
+            EGP:egpParent(I, 1)
+            EGP:egpColor(I, Color3)
+            EGP:egpSize(I, 2)
+        }
+
+        #------------------------------------------------------------
+        # Main HUD frame  BIGGER corners (315 wide, 205 tall)
+        # Corner bracket legs: 60px each  |  line thickness: 3
+        #------------------------------------------------------------
+        # Top-right
+        EGP:egpLine(12, ScrC + vec2(315, -205), ScrC + vec2(315, -145))
+        EGP:egpLine(13, ScrC + vec2(315, -205), ScrC + vec2(255, -205))
+        # Top-left
+        EGP:egpLine(14, ScrC + vec2(-315, -205), ScrC + vec2(-315, -145))
+        EGP:egpLine(15, ScrC + vec2(-315, -205), ScrC + vec2(-255, -205))
+        # Bottom-left
+        EGP:egpLine(16, ScrC + vec2(-315, 205), ScrC + vec2(-315, 145))
+        EGP:egpLine(17, ScrC + vec2(-315, 205), ScrC + vec2(-255, 205))
+        # Bottom-right
+        EGP:egpLine(18, ScrC + vec2(315, 205), ScrC + vec2(315, 145))
+        EGP:egpLine(19, ScrC + vec2(315, 205), ScrC + vec2(255, 205))
+
+        EGP:egpCircleOutline(20, ScrC, vec2(3))
+
+        for(I = 12, 19, 1)
+        {
+            EGP:egpSize(I, 3)
+            EGP:egpColor(I, Color)
+        }
+
+        #------------------------------------------------------------
+        # Mid-side frame ticks (extra visual weight, elements 4144)
+        #------------------------------------------------------------
+        EGP:egpLine(41, ScrC + vec2(0, -205),  ScrC + vec2(0, -182))   # top
+        EGP:egpLine(42, ScrC + vec2(0, 205),   ScrC + vec2(0, 182))    # bottom
+        EGP:egpLine(43, ScrC + vec2(-315, 0),  ScrC + vec2(-292, 0))   # left
+        EGP:egpLine(44, ScrC + vec2(315, 0),   ScrC + vec2(292, 0))    # right
+        for(I = 41, 44, 1)
+        {
+            EGP:egpSize(I, 2)
+            EGP:egpColor(I, Color)
+        }
+
+        #------------------------------------------------------------
+        # Center-to-cursor range line (element 40)
+        # Updated each clk() via perspective projection of Cur_HitPos.
+        # Dashed-style achieved with lower alpha.
+        #------------------------------------------------------------
+        EGP:egpLine(40, ScrC, ScrC)
+        EGP:egpColor(40, Color4)
+        EGP:egpAlpha(40, 180)
+        EGP:egpSize(40, 2)
+
+        #------------------------------------------------------------
+        # Text labels  slightly lower, bigger font (size 14)
+        # Right-side block nudged to X=255 (clear of frame edge).
+        # Bottom labels now sit clearly below the new 205-tall frame.
+        #------------------------------------------------------------
+        EGP:egpText(21, "Range",            ScrC + vec2(-315, -232))
+        EGP:egpText(22, "Gear",             ScrC + vec2(255, 8))
+        EGP:egpText(23, "Engine RPM",       ScrC + vec2(255, -8))
+        EGP:egpText(24, "Speed",            ScrC + vec2(255, 24))
+        EGP:egpText(25, "Fuel",             ScrC + vec2(255, 40))
+        EGP:egpText(26, "Radar Status",     ScrC + vec2(-315, 220))
+        EGP:egpText(27, "Ammo Counter",     ScrC + vec2(-120, 220))
+        EGP:egpText(28, "2nd Ammo counter", ScrC + vec2(-120, 240))
+        EGP:egpText(29, "3rd Ammo counter", ScrC + vec2(-120, 260))
+        EGP:egpText(33, "Auto Lock Status", ScrC + vec2(200, 220))
+
+        for(I = 21, 29, 1)
+        {
+            EGP:egpColor(I, Color2)
+            EGP:egpFont(I, "debugFixed")
+            EGP:egpSize(I, 14)
+        }
+        EGP:egpFont(33, "debugFixed")
+        EGP:egpColor(33, Color2)
+        EGP:egpSize(33, 14)
+
+        #------------------------------------------------------------
+        # Compass / bearing dial (unchanged, still parented to cursor)
+        #------------------------------------------------------------
+        local CompassAnchor = vec2(0, 110)
+        
+        # EGP:egpPolyOutline(30, CompassAnchor + vec2(0, -20), CompassAnchor + vec2(30, 0), CompassAnchor + vec2(30, 60), CompassAnchor + vec2(-30, 60), CompassAnchor + vec2(-30, 0))
+        EGP:egpCircleOutline(32, CompassAnchor, vec2(50, 50))
+        EGP:egpBox(31, vec2(0, 12.5), vec2(4, 49))
+        
+        # EGP:egpPos(30, (EGP:egpPos(30) + EGP:egpPos(1)))
+        EGP:egpPos(32, (EGP:egpPos(32) + EGP:egpPos(1)))
+        # EGP:egpParent(30, 1)
+        EGP:egpParent(32, 1)
+        EGP:egpParent(31, 32)
+        
+        # EGP:egpColor(30, Color2)
+        EGP:egpColor(31, Color3)
+        EGP:egpColor(32, Color2)
+        EGP:egpSize(32, 2)
+
+        MainGun_Mag_Rounds = MainGun:acfMagRounds()
+        Gun2_Mag_Rounds    = Gun2:acfMagRounds()
+        Gun3_Mag_Rounds    = Gun3:acfMagRounds()
+        MainGun_Ammo_Count = MainGun:acfAmmoCount()
+        Gun2_Ammo_Count    = Gun2:acfAmmoCount()
+        Gun3_Ammo_Count    = Gun3:acfAmmoCount()
+        MainGun_Cal = MainGun:acfCaliber()
+        Gun2_Cal    = Gun2:acfCaliber()
+        Gun3_Cal    = Gun3:acfCaliber()
+        MainGun_Ammo_Type = MainGun:acfAmmoType()
+        Gun2_Ammo_Type    = Gun2:acfAmmoType()
+        Gun3_Ammo_Type    = Gun3:acfAmmoType()
+        
+        local IR_Origin_Abs = ScrC + IR_Screen_Origin
+        EGP:egpBoxOutline(34, IR_Origin_Abs + vec2((IR_Screen_Res * IR_Pixel_Size) / 2), vec2(IR_Screen_Res * IR_Pixel_Size))
+        EGP:egpColor(34, Color2)
+        
+        for(I = 1, IR_Max_Blips)
+        {
+            EGP:egpBox(34 + I, vec2(350, 250), vec2(0))
+            EGP:egpColor(34 + I, vec(255, 40, 40))
+            if(I >= IR_Max_Blips) { break }
+        }
+
+        interval(Interval)
+    }
+    else
+    {
+        EGP:egpClear()
+    }
+}
+
+#================================================================
+# MAIN LOOP (only while HUD is active)
+#================================================================
+if(Active)
+{
+    Trace = Cam["Trace", ranger]
+    # local FOV = Cam["FOV", number]
+    #------------------------------------------------------------
+    # Throttled heavy update (10x/sec)
+    #------------------------------------------------------------
+    interval(Interval)
+    if(clk())
+    {
+        Ranger = rangerOffset(50000, MainGun:pos(), MainGun:forward())
+        Cur_HitPos = (Ranger:pos() - vec(0, 0, Drop))
+
+        
+        
+        # Target_HitPos = HitPos
+        local TA = (round((MainGun:angles():yaw()) / 10) * 10) - (round((Self:angles():yaw()) / 10) * 10) + TA_Yaw_Offset
+        if(changed(TA)) { EGP:egpAngle(32, TA) }
+
+        EGP:egp3DTracker(1, Cur_HitPos)
+
+        
+
+        #----------------------------------------------------------
+        # Center-to-cursor line  perspective projection of Cur_HitPos
+        # onto the EGP screen plane.
+        # Assumes standard 75 GMod FOV (adjust tan(37.5) for other FOVs).
+        # FwdDist <= 0 means the cursor is behind the camera; skip draw.
+        #----------------------------------------------------------
+        local ToTarget = Cur_HitPos - Cam_Pos
+        local FwdDist  = ToTarget:dot(Cam_Ang:forward())
+        if(FwdDist > 0)
+        { # print(FOV)
+            # tan(37.5)  0.7673    Scale maps a 37.5 off-axis point to screen edge
+            local Scale    = ScrC:x() / tan((FOV / 2)) # tan(37.5)
+            local Cursor2D = ScrC + vec2(
+                 (ToTarget:dot(Cam_Ang:right()) / FwdDist) * Scale,
+                -(ToTarget:dot(Cam_Ang:up())    / FwdDist) * Scale
+            )
+            EGP:egpLine(40, ScrC, Cursor2D)
+        }
+
+        Speed = Base:vel():length() / 17.6
+        EGP:egpSetText(22, "" + Cur_Gear + "/" + round((Gearbox_Ratio / Cur_Gear), 2))
+        EGP:egpSetText(23, "" + Engine_RPM + " RPM")
+        EGP:egpSetText(24, "" + round(Speed) + " mph")
+
+        local Ready   = MainGun:acfReady()
+        local Ready_2 = Gun2:acfReady()
+        local Ready_3 = Gun3:acfReady()
+
+        if(changed(Ready))
+        {
+            if(Ready) { for(I = 2, 11) { EGP:egpColor(I, Color3) } }
+            else      { for(I = 2, 11) { EGP:egpColor(I, Color4) } }
+        }
+
+        if(!Ready)
+        {
+            local RelInd = round(round(MainGun:acfReloadTime(), 2) * (1 - MainGun:acfReloadProgress()), 2)
+            ReadyCount = "" + RelInd + "s"
+        }
+        elseif(changed(Ready)) { ReadyCount = "Ready" }
+
+        if(!Ready_2)
+        {
+            local RelInd_2 = round(round(Gun2:acfReloadTime(), 2) * (1 - Gun2:acfReloadProgress()), 2)
+            ReadyCount_2 = "" + RelInd_2 + "s"
+        }
+        elseif(changed(Ready_2)) { ReadyCount_2 = "Ready" }
+
+        if(!Ready_3)
+        {
+            local RelInd_3 = round(round(Gun3:acfReloadTime(), 2) * (1 - Gun3:acfReloadProgress()), 2)
+            ReadyCount_3 = "" + RelInd_3 + "s"
+        }
+        elseif(changed(Ready_3)) { ReadyCount_3 = "Ready" }
+
+        if(MainGun:acfAmmoType() != "" && changed(MainGun:acfAmmoType())) { MainGun_Ammo_Type = MainGun:acfAmmoType() }
+        if(Gun2:acfAmmoType() != "" && changed(Gun2:acfAmmoType()))       { Gun2_Ammo_Type = Gun2:acfAmmoType() }
+        if(Gun3:acfAmmoType() != "" && changed(Gun3:acfAmmoType()))       { Gun3_Ammo_Type = Gun3:acfAmmoType() }
+
+        MainGun_Ammo_Count = MainGun:acfAmmoCount()
+        Gun2_Ammo_Count    = Gun2:acfAmmoCount()
+        Gun3_Ammo_Count    = Gun3:acfAmmoCount()
+        MainGun_Mag_Rounds = MainGun:acfMagRounds()
+        Gun2_Mag_Rounds    = Gun2:acfMagRounds()
+        Gun3_Mag_Rounds    = Gun3:acfMagRounds()
+
+        EGP:egpSetText(27, "" + MainGun_Cal + "mm " + MainGun_Ammo_Type + ": " + MainGun_Mag_Rounds + "/" + MainGun_Ammo_Count + "|" + ReadyCount)
+        EGP:egpSetText(28, "" + Gun2_Cal + "mm " + Gun2_Ammo_Type + ": " + Gun2_Mag_Rounds + "/" + Gun2_Ammo_Count + "|" + ReadyCount_2)
+        EGP:egpSetText(29, "" + Gun3_Cal + "mm " + Gun3_Ammo_Type + ": " + Gun3_Mag_Rounds + "/" + Gun3_Ammo_Count + "|" + ReadyCount_3)
+    
+        #----------------------------------------------------------
+        # IRST blip projection
+        #----------------------------------------------------------
+        for(I = 1, IR_Max_Blips) { IR_Blip_Active[I, number] = 0, if(I >= IR_Max_Blips) { break } }
+        
+        if(IR_Has_Target)
+        {
+            local N = min(IR_Hit_Count, IR_Max_Blips)
+            for(I = 1, N)
+            { 
+                local HitPos = IR_Hit_Positions[I, vector]
+                local Dir = (HitPos - Cam_Pos):normalized()
+        
+                local Fwd_Vec   = Cam_Ang:forward()
+                local Right_Vec = Fwd_Vec:cross(vec(0, 0, 1)):normalized()
+                local Up_Vec    = Right_Vec:cross(Fwd_Vec):normalized()
+                
+                local Local_Fwd   = Dir:dot(Fwd_Vec)
+                local Local_Right = Dir:dot(Right_Vec)
+                local Local_Up    = Dir:dot(Up_Vec)
+                
+                if(Local_Fwd > 0)
+                {
+                    local Yaw_Deg   = atan(Local_Right / Local_Fwd)
+                    local Pitch_Deg = atan(Local_Up / Local_Fwd)
+        
+                    local Px = IR_Screen_Half - (Yaw_Deg / IR_FOV_Per_Pixel)
+                    local Py = IR_Screen_Half - (Pitch_Deg / IR_FOV_Per_Pixel)
+        
+                    if(Px >= 0 && Px <= IR_Screen_Res && Py >= 0 && Py <= IR_Screen_Res)
+                    {
+                        IR_Blip_Target_Pos[I, vector2] = (ScrC + IR_Screen_Origin) + vec2(Px, Py) * IR_Pixel_Size
+                        IR_Blip_Active[I, number] = 1
+                    }
+                }
+                if(I >= N) { break }
+            }
+        }
+    }
+    
+#[    timer("Lerp", Lerp_Interval)
+    if(clk("Lerp"))
+    {
+        Cur_HitPos = lerp(Cur_HitPos, Target_HitPos, Lerp_Factor)
+        stoptimer("Lerp")
+    }]#
+    
+    #------------------------------------------------------------
+    # Range readout / auto-lock status (edge-triggered)
+    #------------------------------------------------------------
+    if(changed(Dist)) { EGP:egpSetText(21, "" + round(Dist / 39.37) + "m") }
+
+    if(changed(Is_AutoTargeting))
+    {
+        if(Is_AutoTargeting) { EGP:egpSetText(33, "ALO ONLINE") }
+        else                 { EGP:egpSetText(33, "ALO OFFLINE") }
+    }
+    
+    for(I = 1, IR_Max_Blips)
+    {
+        if(IR_Blip_Active[I, number])
+        {
+            IR_Blip_Screen_Pos[I, vector2] = IR_Blip_Screen_Pos[I, vector2] + (IR_Blip_Target_Pos[I, vector2] - IR_Blip_Screen_Pos[I, vector2]) * IR_Lerp_Factor
+            EGP:egpPos(34 + I, IR_Blip_Screen_Pos[I, vector2])
+            EGP:egpSize(34 + I, vec2(IR_Pixel_Size))
+        }
+        else
+        {
+            EGP:egpSize(34 + I, vec2(0))
+        }
+        if(I >= IR_Max_Blips) { break }
+    }
+
+    #------------------------------------------------------------
+    # Radar target marker
+    #------------------------------------------------------------
+    if(changed(Radar_Positions:count()))
+    {
+        if(Radar_Positions:count()) { EGP:egpSetText(26, "Detected"), Detected = 1 }
+        else                        { EGP:egpSetText(26, "Idle"), Detected = 0 }
+    }
+
+    if(Radar_Positions:count())
+    {
+        if(!holoEntity(100):isValid())
+        {
+            holoCreate(100, vec(0))
+            holoScaleUnits(100, vec(0))
+            EGP:egp3DTracker(90, holoEntity(100):pos())
+            EGP:egpParent(90, holoEntity(100))
+            EGP:egpBoxOutline(80, vec2(0), vec2(1))
+            EGP:egpSize(80, vec2(26))
+            EGP:egpParent(80, 90)
+        }
+
+        if(Is_AutoTargeting)
+        {
+            EGP:egpColor(80, vec(255, 0, 0))
+            holoPos(100, Lead)
+        }
+        else
+        {
+            EGP:egpColor(80, vec(0, 0, 255))
+            holoPos(100, Radar_Positions:averageVector())
+        }
+    }
+
+    #------------------------------------------------------------
+    # Friendly AI team trackers
+    #------------------------------------------------------------
+    if(AI_Team_Members[1, table]:count())
+    {
+        local K = 0
+        foreach(AI_Team_Member_ID:string, V:entity = AI_Team_Members[1, table])
+        {
+            K = K + 1
+
+            EGP:egp3DTracker(200 + K, V:pos())
+            EGP:egpText(180 + K, "Robot", vec2(-32, 12))
+            EGP:egpSetText(180 + K, "Robot: " + AI_Team_Member_ID)
+            EGP:egpBoxOutline(170 + K, vec2(0), vec2(25))
+            EGP:egpColor(180 + K, vec(155, 0, 0))
+            EGP:egpColor(170 + K, vec(200, 200, 200))
+            EGP:egpParent(180 + K, 200 + K)
+            EGP:egpParent(170 + K, 200 + K)
+            EGP:egpPos(200 + K, V:pos())
+
+            if(K >= 8) { break }
+            if(K >= AI_Team_Members[1, table]:count()) { break }
+        }
+    }
+
+    #------------------------------------------------------------
+    # Squad "mark" pings
+    #------------------------------------------------------------
+    if(changed(Set_Mark) && Set_Mark)
+    {
+        local Driver2 = Seat:driver()
+        local Squad_Set_Mark_Pos = Trace:pos()
+
+        EGP:egp3DTracker(300, Squad_Set_Mark_Pos)
+        EGP:egpText(280, "Marked", vec2(-32, 12))
+        EGP:egpSetText(280, "Marked: " + round(Squad_Set_Mark_Pos):toString())
+        EGP:egpBoxOutline(270, vec2(0), vec2(25))
+        EGP:egpColor(280, vec(0, 100, 50))
+        EGP:egpColor(270, vec(200, 200, 200))
+        EGP:egpParent(280, 300)
+        EGP:egpParent(270, 300)
+        EGP:egpPos(300, Squad_Set_Mark_Pos)
+
+        print("Marked: " + round(Squad_Set_Mark_Pos):toString())
+
+        if(AI_Team_Members[1, table]:count())
+        {
+            local AI_Team_Members_Keys = AI_Team_Members[1, table]:keys()
+            local AI_Team_Member_ID = AI_Team_Members_Keys[round(random(1, AI_Team_Members_Keys:count())), string]
+            Scouts[4, table][1, array] = array(Squad_Set_Mark_Pos, AI_Team_Member_ID)
+        }
+
+        Squad_Markers[1, table][Driver2:name(), vector] = Squad_Set_Mark_Pos
+    }
+
+    if(!Scouts[4, table]:count() && changed(Scouts[4, table]:count()))
+    {
+        EGP:egpRemove(300)
+        EGP:egpRemove(280)
+        EGP:egpRemove(270)
+    }
+
+    if(Squad_Markers[1, table]:count())
+    {
+        local Driver3 = Seat:driver()
+        local K = 0
+        foreach(Squad_Marker_Owner:string, Squad_Marker_Pos:vector = Squad_Markers[1, table])
+        {
+            if(Squad_Marker_Owner != Driver3:name())
+            {
+                K = K + 1
+
+                EGP:egp3DTracker(500 + K, Squad_Marker_Pos)
+                EGP:egpText(780 + K, "Squad Mark", vec2(-32, 12))
+                EGP:egpSetText(780 + K, "Squad Mark: " + Squad_Marker_Owner)
+                EGP:egpBoxOutline(670 + K, vec2(0), vec2(25))
+                EGP:egpColor(780 + K, vec(155, 0, 0))
+                EGP:egpColor(670 + K, vec(200, 200, 200))
+                EGP:egpParent(780 + K, 500 + K)
+                EGP:egpParent(670 + K, 500 + K)
+                EGP:egpPos(500 + K, Squad_Marker_Pos)
+
+                if(K >= 8) { break }
+                if(K >= Squad_Markers[1, table]:count()) { break }
+            }
+        }
+    }
+
+    #------------------------------------------------------------
+    # Fuel: percentage readout + sequential tank switching
+    #------------------------------------------------------------
+    timer("Fuel", 2000)
+    if(clk("Fuel"))
+    {
+        if(!FuelCap) 
+        {
+            foreach(CurFuelIndex:number, CurFuelTank:entity=Tanks) 
+            { 
+                FuelCap = FuelCap + CurFuelTank:acfFuel()
+                if(CurFuelIndex >= Tanks:count()) { break }
+            }  
+        }
+        
+        local FuelLevel = 0
+        
+        foreach(CurFuelIndex:number, CurFuelTank:entity=Tanks) 
+        { 
+            FuelLevel = FuelLevel + CurFuelTank:acfFuel()
+            if(CurFuelIndex >= Tanks:count()) { break }
+        }  
+           
+        local FuelCol = FuelLevel / FuelCap
+        EGP:egpSetText(25, "Fuel: " + round(FuelCol * 100) + " % ")
+
+        stoptimer("Fuel")
+    }
+    
+    interval(Interval)
+} else { interval(Interval) }
