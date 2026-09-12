@@ -1,0 +1,69 @@
+@name Camera v3 (Optimized)
+@inputs Active [Base DS]:entity [Screen]:wirelink
+@persist Res ResP1 Int Res2 Inter X Y E:entity Array:array White:vector
+@persist [TargPos CamPos]:vector CamAng:angle
+@persist [Frequency]:number
+
+if (first() | dupefinished()) {
+    E = entity()
+    Frequency = 150
+    Res = 32
+    Screen[1048572] = Res # X res
+    Screen[1048573] = Res # Y res
+    Screen[1048574] = 1 # reset
+    Screen[1048569] = 0 # color mode
+    for(I = 1, 119) {
+        Screen[I] = I * 10
+    }
+    Res2 = Res/2
+    Inter = 1 / Res # fov
+    Int = 1
+    White = vec(255)
+    ResP1 = Res + 1
+    
+    rangerPersist(1)
+    findInSphere(E:pos(), 600)
+    rangerFilter(findToArray())
+    
+    holoCreate(1)
+    holoModel(1, "hq_sphere")
+    holoDisableShading(1, 1)
+    holoColor(1, vec(255, 0, 0))
+    
+    DS:propNotSolid(0)
+    interval(Frequency)
+} else { interval(Frequency) }
+
+if(clk()) {
+    if (Active) { 
+        local Owner = owner()
+        CamPos = Owner:pos() + vec(0, 0, 72)
+        TargPos = Owner:aimPos()
+        CamAng = (TargPos - CamPos):toAngle()
+        for (I = 0, 100) {
+            if (!perf()) {break}
+            if (Y != ResP1) {
+                local Pos = CamPos
+                TargAng2 = CamAng
+                
+                R = rangerOffset(99999, Pos, (TargAng2 + ang((Y - Res2) * Inter, (Res2 - X) * Inter, 0)):forward())
+                C = X + Y * Res
+                
+                if (R:hitWorld()) {
+                    Screen[C] = 0
+                } else {
+                    Shade = ((-(R:position() - Pos):normalized():dot(R:hitNormal())))
+                    Screen[C] = rgb2digi(White * Shade, 0)
+                }
+                
+                X += Int
+                if (X > Res) {Y += Int, X = 0}
+                
+                holoPos(1, Pos + (R:position() - Pos):normalized() * 1000)
+            } else {
+                Y = 0
+            }
+        }
+    }
+    interval(Frequency)
+} else { interval(Frequency) } 
