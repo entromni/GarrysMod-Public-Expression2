@@ -1,0 +1,169 @@
+@name IRST v2.1 (parallel rays + velocity)
+
+@inputs [Filter]:array
+@persist [Filter]:array
+
+@inputs [IRST]:entity
+@persist [IRST]:entity
+
+@inputs [Angle]:array
+@persist [Angle]:array
+
+@persist [Angles_Accumulated]:table
+@outputs [Angles_Accumulated]:table
+
+@persist [Ranger_Hull_Size]:vector
+
+@persist [Angle_First, Average_Angle]:angle
+@persist [Angles_Amount, Max_Accumulated_Angles]:number
+@outputs [Average_Angle]:angle
+
+@persist [Frequency]:number
+
+# -- parallel rays + velocity --
+@persist [Ray_Offsets]:array          # small pitch/yaw offsets (vec2, degrees) fired around the center ray
+@outputs [Hit_Positions]:array        # world hit pos of every ray that connected, this tick
+@outputs [Hit_Count]:number
+@outputs [Target_Centroid]:vector
+@outputs [Target_Velocity]:vector     # (centroid - previous centroid) / dt
+@outputs [Target_Distance]:number
+@outputs [Has_Target]:number
+@persist [Prev_Centroid]:vector
+@persist [Had_Target_Last_Tick]:number
+
+if(first() || dupefinished() || duped())
+{
+    Self = entity()
+
+    Ranger_Hull_Size = vec(12)
+    # Filter = entity():getConnectedEntities()
+
+    Angles_Accumulated = table()
+    Angle_First = ang(0)
+    Max_Accumulated_Angles = 24
+
+    Angles_Amount = 0
+
+    # holoCreate(1, Self:pos())
+
+    Frequency = 100
+
+    # Center ray + a small "plus" of 4 more around it. Widen Spread for a
+    # bigger detection cone, or add more offsets for denser coverage - each
+    # extra entry is one more rangerOffsetHull() call per tick.
+    local Spread = 1.5 # local Spread = 1.5 # OLD
+    # Ray_Offsets = array(vec2(0, 0), vec2(Spread, 0), vec2(-Spread, 0), vec2(0, Spread), vec2(0, -Spread)) # OLD
+    Ray_Offsets = array(vec2(0, 0), vec2(Spread, 0), vec2(Spread * 2, 0), vec2(-Spread, 0), vec2(-Spread * 2, 0), vec2(0, Spread), vec2(0, Spread * 2), vec2(0, -Spread), vec2(0, -Spread * 2))
+
+
+    Prev_Centroid = vec(0)
+    Had_Target_Last_Tick = 0
+
+    interval(Frequency)
+}
+elseif(clk())
+{
+    Hit_Positions = array()
+    Hit_Count = 0
+    local Sum_Pos = vec(0)
+    local Sum_Dist = 0
+
+    if(Angle:count())
+    {
+        Angle_First = Angle[1, angle]
+
+        if(changed(Angle_First))
+        {
+            Angles_Accumulated:pushAngle(Angle_First)
+            Angles_Amount = Angles_Accumulated:count()
+        }
+
+        if(Angles_Amount)
+        {
+            Average_Angle = ang(0)
+            for(Temp_Index = 1, Angles_Amount, 1)
+            {
+                Average_Angle = Average_Angle + Angles_Accumulated[Temp_Index, angle]
+                if(Temp_Index >= Angles_Amount) { break }
+            }
+        }
+
+        if(Angles_Amount > Max_Accumulated_Angles)
+        {
+            Angles_Accumulated:remove(1)
+            Angles_Amount = Angles_Accumulated:count()
+        }
+
+        Average_Angle = (Average_Angle / Angles_Amount)
+
+        # rangerFilter(Filter)
+
+        for(Ray_Index = 1, Ray_Offsets:count())
+        {
+            local Offset = Ray_Offsets[Ray_Index, vector2]
+            local A = Average_Angle + ang(Offset:y(), Offset:x(), 0)
+
+            local LocalDir = A:forward()
+            LocalDir = vec(LocalDir:x(), -LocalDir:y(), -LocalDir:z())
+            local WorldDirection = IRST:toWorldAxis(LocalDir)
+
+            rangerFilter(Filter)
+            local Ranger = rangerOffsetHull(50000, IRST:pos(), WorldDirection, Ranger_Hull_Size)
+
+            # If Ranger:hit() isn't valid in your E2 build, swap this
+            # condition for Ranger:distance() < 999 instead - since the
+            # cast is capped at 1000, a shorter distance means it connected.
+            if(Ranger:hit())
+            { 
+                local HitPos = Ranger:pos()
+                Hit_Count++
+                Hit_Positions[Hit_Count, vector] = HitPos
+                Sum_Pos = Sum_Pos + HitPos
+                Sum_Dist = Sum_Dist + Ranger:distance()
+            }
+
+            if(Ray_Index >= Ray_Offsets:count()) { break }
+        }
+
+        if(Hit_Count)
+        {
+            Target_Centroid = Sum_Pos / Hit_Count
+            Target_Distance = Sum_Dist / Hit_Count
+            Has_Target = 1
+
+            if(Had_Target_Last_Tick)
+            {
+                Target_Velocity = (Target_Centroid - Prev_Centroid) / (Frequency / 1000)
+            }
+            else
+            {
+                # Just (re)acquired - no prior sample, so don't report a
+                # velocity spike out of nowhere.
+                Target_Velocity = vec(0)
+            }
+
+            Prev_Centroid = Target_Centroid
+            Had_Target_Last_Tick = 1
+
+            # holoPos(1, Target_Centroid)
+            # holoColor(1, vec(255, 0, 0))
+        }
+        else
+        {
+            Has_Target = 0
+            Target_Velocity = vec(0)
+            Had_Target_Last_Tick = 0
+        }
+    }
+    else
+    {
+        Average_Angle = ang(0)
+        Angles_Accumulated = table()
+        Has_Target = 0
+        Target_Velocity = vec(0)
+        Had_Target_Last_Tick = 0
+    }
+
+    interval(Frequency)
+}
+else { interval(Frequency) }
