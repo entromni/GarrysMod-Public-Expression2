@@ -1,0 +1,229 @@
+@name ExtraPackage ACF3 handeler v2.0
+@inputs [Gun]:entity
+@persist [Gun]:entity
+
+@outputs [Missile Missile_Rack]:entity 
+@persist [Missile Missile_Rack]:entity 
+
+@outputs [ShotsLeft, IsFiring, Reloading]:number 
+@persist [ShotsLeft, IsFiring, Reloading]:number
+
+@outputs [MissileIndex]:number [Missiles New_Missiles MissileP2Ms_Array]:array
+@outputs [Locked_Delay]:number
+@outputs [TempVar_1 TempVar_2]
+@persist [MissileP2Ms]:gtable
+
+@outputs [SpawnContraption]:number
+@outputs [Locked_P2Ms]:number
+@persist [Temp_Delta]:vector
+
+@persist [Helper]:entity
+
+timer("Delay", 1000)
+
+if(first() || dupefinished()) 
+{ 
+    MissileP2Ms = gTable("MissileP2Ms", 0)
+    MissileP2Ms[1, array] = array()
+    TempVar_2 = ShotsLeft MissileIndex = 1 Locked_Delay = 0 
+    SpawnContraption = 0
+    Locked_P2Ms = 0
+    New_Missiles = array()
+    Helper = noentity()
+}
+
+#if(!Missile) 
+#{
+#    foreach(TempVar_11, TempVar_12:entity=Missile_Rack:getConnectedEntities()) 
+#    {
+#    
+#        if (TempVar_12:type() == "acf_missile" && changed(TempVar_11)) { Missile = TempVar_12 }
+#        
+#    }
+#}
+
+
+if(MissileP2Ms[1, array]:exists(1)) 
+{
+    foreach(TempVar_5, TempVar_6:entity=MissileP2Ms[1, array]) 
+    {  #if(!MissileP2Ms[1, array][TempVar_5, entity]:isValid() & MissileP2Ms[1, array]:exists(TempVar_5)) { MissileP2Ms[1, array]:remove(TempVar_5) }
+#        TempVar_6:propFreeze(1)
+        foreach(TempVar_7, TempVar_8:entity=TempVar_6:getConnectedEntities()) 
+        { 
+            TempVar_8:setAlpha(0)
+            TempVar_8:setColor(vec(255))
+            
+            if(TempVar_8:type() == "acf_ammo") { TempVar_8:acfActive(1) } 
+            
+            if(TempVar_8:type() == "acf_gun") { Helper = TempVar_8 }
+            
+        }  
+        
+        # if(Missiles[TempVar_5, entity]:isValid() & TempVar_6:pos() != Missiles[TempVar_5, entity]:toWorld(vec(-42, 0, 24)) & TempVar_6:angles() != Missiles[TempVar_5, entity]:toWorld(ang(0, 0, 0))) 
+        if(Missiles[TempVar_5, entity]:isValid())
+        { stoptimer("Remove")
+#            if(TempVar_6:type() != "acf_ammo")
+#                { TempVar_6:propGravity(0)
+#                  TempVar_6:propNotSolid(1)
+#                  TempVar_6:propFreeze(1) }
+
+#                findIncludePlayerProps(owner())
+#                findInSphere(Missiles[TempVar_5, entity]:pos(), 800)
+                
+#                local Hunted = findToArray()
+
+#                if(Ranger:entity():owner():name() == owner():name()) { rangerFilter(Ranger:entity()) }              
+#                rangerFilter(Hunted)  
+                # rangerFilter(Missiles:add(array(Missile_Rack)):add(MissileP2Ms[1, array])) 
+                # rangerFlags(" ") 
+                # local Ranger = rangerOffset(763.7*2, Missiles[TempVar_5, entity]:pos(), Missiles[TempVar_5, entity]:forward())
+                
+                # if(Helper:isValid()) 
+                # { print(Helper:acfAmmoCount()) }
+                
+                Temp_Delta = Missiles[TempVar_5, entity]:pos()
+                
+                holoCreate(1)
+                
+                rangerFlags(" ") 
+                # local Ranger = rangerOffset(381.4+(abs(toUnit( "km/h", (($Temp_Delta)/0.1):length()))+1), Missiles[TempVar_5, entity]:pos(), Missiles[TempVar_5, entity]:forward())
+                local Ranger = rangerOffset(abs((($Temp_Delta)/0.1):length())+(Missiles[TempVar_5, entity]:boxSize():length()+381.4), Missiles[TempVar_5, entity]:pos(), Missiles[TempVar_5, entity]:forward())
+                # local Ranger = rangerOffset(abs(Missiles[TempVar_5, entity]:vel():length()), Missiles[TempVar_5, entity]:pos(), Missiles[TempVar_5, entity]:forward())
+
+                holoPos(1, Ranger:pos())
+                
+                holoAlpha(1, 0)
+                    
+#                if(Ranger:entity():owner():name() == owner():name()) { rangerFilter(Ranger:entity()) }              
+
+#            if(!Missiles[TempVar_5, entity]:isValid()) { TempVar_6:deparent() }
+
+#            if(Ranger:distance() < 762) { TempVar_6:deparent() } 
+#            if(TempVar_6:pos() != Missiles[TempVar_5, entity]:toWorld(vec(108, 0, 0)) & !TempVar_6:parent():isValid()) { TempVar_6:setPos(Missiles[TempVar_5, entity]:toWorld(vec(108, 0, 0))) }
+#            elseif(!TempVar_6:parent():isValid()) { print("parented!") TempVar_6:parentTo(Missiles[TempVar_5, entity]) }
+
+#                if(Ranger:distance() > 763.7*1.5) { TempVar_6:setPos(Missiles[TempVar_5, entity]:toWorld(vec(-Ranger:distance()/2, 0, 0))) }
+#                else { TempVar_6:setPos(Missiles[TempVar_5, entity]:pos()) }
+
+                if(!Ranger:hitWorld()) { TempVar_6:setPos(Missiles[TempVar_5, entity]:toWorld(vec(-Missiles[TempVar_5, entity]:boxSize():length() * 4, 0, 0))) }
+                # if(Ranger:hitWorld()) { TempVar_6:setPos(Missiles[TempVar_5, entity]:pos()) }
+                if(Ranger:hitWorld()) { TempVar_6:setPos(Missiles[TempVar_5, entity]:toWorld(vec(0, 0, 0))) }
+                
+#          TempVar_6:setPos(Ranger:pos())                 
+#          TempVar_6:setPos(Missiles[TempVar_5, entity]:toWorld(vec(-42, 0, 24))) 
+                TempVar_6:setAng(Missiles[TempVar_5, entity]:toWorld(ang(-90, 0, 0))) 
+                
+                TempVar_6:propFreeze(1)
+                
+#            if(TempVar_6:type() != "acf_ammo") 
+#                { TempVar_6:propGravity(0)
+#                  TempVar_6:propNotSolid(1)
+#                  TempVar_6:propFreeze(1) }
+        } 
+        
+        elseif(!Missiles[TempVar_5, entity]:isValid()) 
+        { 
+            if(Helper:isValid()) 
+            { Helper:acfFire(1) }
+            
+            timer("Remove", 7500) 
+          if(clk("Remove")) 
+            { TempVar_6:propDelete() } 
+        }
+        
+    }  
+}
+
+if((Reloading == 1) | (IsFiring == 1)) 
+{ # MissileIndex = 0
+    
+    # if(Reloading == 1) 
+    # { # Locked_P2Ms = 0 
+    foreach(TempVar_9, TempVar_10:entity=MissileP2Ms[1, array]) 
+    { 
+        if(!MissileP2Ms[1, array][TempVar_9, entity]:isValid() & MissileP2Ms[1, array]:exists(TempVar_9)) 
+            { MissileP2Ms[1, array]:remove(TempVar_9) }
+    }
+    # } 
+    
+    foreach(TempVar_3, TempVar_4:entity=Missiles) 
+    { 
+        if(!Missiles[TempVar_3, entity]:isValid() & Missiles:exists(TempVar_3)) 
+            { Missiles:remove(TempVar_3) }
+    }
+    
+}
+
+# elseif(clk("Delay")) { 
+
+#if(clk("Delay")) 
+#{ 
+#
+#    if(MissileIndex > Missiles:count()+1) { MissileIndex = 0 }
+#    
+#    if(MissileIndex > ShotsLeft) { MissileIndex-- }
+#    
+#    if(changed(MissileIndex) & MissileIndex & !Missiles:exists(MissileIndex) & Missile:id() != Missiles[MissileIndex, entity]:id()) { Missiles:pushEntity(Missile) }
+#    
+#    TempVar_1 = MissileIndex
+#    
+#    if(MissileIndex < ShotsLeft) { MissileIndex++ }
+#    
+#    stoptimer("Delay")
+#
+#}
+
+#if(MissileP2Ms[1, array]:count() < ShotsLeft+1 & Missiles:exists(ShotsLeft) & !Locked_P2Ms) 
+if(MissileP2Ms[1, array]:count() < Missiles:count() & !Locked_P2Ms & Missile:isValid()) 
+{
+    if(SpawnContraption == 1 & MissileP2Ms[1, array]:count() < Missiles:count()) { SpawnContraption-- } 
+    elseif(SpawnContraption == 0 & MissileP2Ms[1, array]:count() < Missiles:count()) { SpawnContraption++ } 
+    else { SpawnContraption = 0 Locked_P2Ms = 1 }
+} else { SpawnContraption = 0 }
+
+MissileP2Ms_Array = MissileP2Ms[1, array]
+
+if(Gun:isValid() & Gun:acfIsReloading()) 
+{ 
+    Reloading = 1,
+     
+    if(Missile:isValid() & MissileP2Ms_Array[1, entity]:isValid()) 
+    { Locked_P2Ms = 1 }
+} 
+else 
+{ 
+    Reloading = 0, 
+    
+    if(!Missile:isValid()) 
+    { Locked_P2Ms = 0 }
+}
+
+findIncludeClass("ace_missile")
+findIncludeClass("acf_missile")
+
+findIncludeClass("ace_glatgm")
+findIncludeClass("acf_glatgm")
+
+findExcludeClass("acf_missileradar")
+
+findInSphere(entity():pos(), 1000000)
+
+Find = findToArray()
+    
+# if(Find:count() && changed(Find:count())) 
+if(Find:count()) 
+{ # print("Found Missiles")
+    for (I = 1, Find:count()) 
+    { 
+        if((Find[I, entity]:isValid() & Find:exists(I)) & (Find[I, entity]:owner():id() == entity():owner():id()))
+        { # print("Found Owner Missiles")
+            # Missiles:pushEntity(Find[I, entity])
+            Missiles[I, entity] = Find[I, entity]
+            Missile = Missiles[1, entity]
+        }   
+    }
+}
+
+runOnTick(1)
+
+if(dupefinished()) { reset() }
