@@ -1,0 +1,827 @@
+@name GG5 Zan (Universal Mod).REVAMP
+
+@inputs [Gun, Radar_Entity, MissileLauncher]:entity
+@inputs [Base, Baseplate]:entity 
+@inputs [HAxis, VAxis, VAxis2, VAxis3]:entity 
+@inputs [MuzzleVel]:number
+@inputs [Cam]:wirelink 
+@inputs [Active, R, PrevWeapon, NextWeapon, Light]:number 
+@inputs [Lock_On_AimPos_Bind]:number
+
+@inputs [TarVel_Input]:vector
+@persist [TarVel_Input]:vector
+
+@inputs [FireIn]:number
+@outputs [FireOut]:number
+
+@outputs [FOV]:number
+@persist [FOV]:number
+
+@persist [Gun, Radar_Entity, MissileLauncher]:entity
+@persist [Base, Baseplate]:entity 
+@persist [HAxis, VAxis, VAxis2, VAxis3]:entity 
+@persist [MuzzleVel]:number
+@persist [Cam]:wirelink 
+@persist [Active, R, PrevWeapon, NextWeapon, Light]:number 
+
+@inputs [Ballistics_Table_Elevation_Array, Ballistics_Table_Travel_Time_Array]:table
+@persist [Ballistics_Table_Elevation_Array, Ballistics_Table_Travel_Time_Array]:table
+
+@outputs [Drop]:number [Drift, Total_Drift]:vector
+@persist [Drop]:number [Drift, Total_Drift]:vector 
+
+@outputs [Dist]:number
+@persist [Dist]:number
+
+@persist [MuzzlePos]:vector
+@persist [ShowDebugMuzzlePosHolo]:number
+
+@outputs [Ops]:number
+@outputs [Self]:entity
+
+@outputs [Filter]:array
+@persist [Filter]:array
+
+@outputs [HitPos, AimPos]:vector
+@persist [HitPos]:vector 
+@persist [Trace]:ranger
+
+@persist [MaxElevation, MaxDepression, MinYaw, MaxYaw, Unlock, Interval, StartFilterCount]:number
+@persist [CamMode]:number
+
+@outputs [T]:number
+@persist [T]:number
+
+@persist [Position, GunnerPos, CommanderPos]:vector
+@persist [CamDistance, GunnerDis, CommanderDis]:number
+
+@persist [GunAngles]:angle 
+@persist [RotateSpeed, True_RotateSpeed, RotatedSpeed_Divided]:number
+@persist [Stabilise_Boost, Stabilizer_Multiplier]:number
+
+@inputs [Toggle_Auto_Lock]:number [Force_Auto_Lock]:number
+@persist [Toggle_Auto_Lock]:number [Force_Auto_Lock]:number
+
+@outputs [Auto_Lock_Mode]:number
+@persist [Auto_Lock_Mode]:number
+
+@outputs [Filtered_Missiles_Pos_Array, Filtered_Missiles_Vel_Array]:array
+@persist [Filtered_Missiles_Pos_Array, Filtered_Missiles_Vel_Array]:array
+
+@persist [Lock_On_AimPos_Bind, Is_Locking_Onto_PrevAimPos] [PrevAimPos]:vector
+
+@inputs [Targets_Pos_Array, Radar_Velocities, Missile_Radar_Entities, Missile_Radar_Velocities]:array
+@persist [Targets_Pos_Array, Radar_Velocities, Missile_Radar_Entities, Missile_Radar_Velocities]:array
+
+@outputs [VaxisAngle, HaxisAngle, TurretAng]:angle
+@persist [VaxisAngle, HaxisAngle, TurretAng]:angle
+
+@outputs [GunDir, Lead, TarPos]:vector
+@persist [GunDir, Lead, TarPos]:vector
+
+@outputs [TempVar_2]:number
+
+@persist [GunAng]:angle
+
+@persist [Camera_Data]:table
+
+@inputs [Ballistics_Toggle]:number
+@persist [Ballistics_Toggle]:number
+
+@outputs [Ballistics_State]:number
+@persist [Ballistics_State]:number
+
+@persist [Default_Ballistics_State]:number
+
+@persist [Is_Topmount, Is_APS, Is_Radar_Gimbal]:number
+
+@outputs [Temp_Array, Temp_Array_2]:array
+@persist [Temp_Array, Temp_Array_2]:array
+
+@persist [Is_Locked]:number [Guns]:table
+@outputs [Guns]:table
+
+@trigger Active PrevWeapon NextWeapon R Light MuzzleVel Toggle_Auto_Lock Ballistics_Toggle Force_Auto_Lock Lock_On_AimPos_Bind
+
+# Edit by Zan
+
+if(first() || dupefinished() || duped()) 
+{
+    #------------------------------------------------------#
+    #------------------------------------------------------#    
+    #------------------------------------------------------#
+
+    MaxElevation = 25 # Max angle the gun can look up.
+    MaxDepression = 7 # Max angle the gun can look down.
+    
+    MinYaw = 360 # Ideally keep at 360.
+    MaxYaw = 360 # Ideally keep at 360.
+    
+    Position = vec(-20, -36, 120) # Third person view position.
+    CamDistance = 300 # Feel free to change.
+        
+    GunnerPos = vec(75, -38, 72) # Gunner view position.
+    GunnerDis = 0 # Keep at 0.
+        
+    CommanderPos = vec(-48, -20, 96) # Commander view position.
+    CommanderDis = 0 # Keep at 0.
+
+    RotateSpeed = 160 # Turret rotation speed. This GG5 has a built in stabilizer so you do not need to have a really high turret speed.
+    
+    Is_Topmount = 0 # Set to one to be able to use seperately from your main cannon GG5.
+    Is_APS = 0 # Is_Topmount must be 1 to work.
+    Is_Radar_Gimbal = 0 # Is_Topmount must be 1 to work. (Refrain from using both APS and Radar_Gimbal)
+    
+    Default_Ballistics_State = 1 # 1 For ballistics to be on by default. Vice versa for 0.
+        
+    #------------------------------------------------------#
+    #------------------------------------------------------#    
+    #------------------------------------------------------#
+
+    Filtered_Missiles_Pos_Array = array()
+
+    Camera_Data = table()
+    
+    Targets_Pos_Array = array()
+    
+    Auto_Lock_Mode = 0
+    
+    Self = entity()
+    
+    Is_Locked = 0
+    
+    FireOut = 0
+    
+    Guns = table()
+    
+    if(!Gun:isValid() & Radar_Entity:isValid()) 
+    {
+        GunAng = Self:toLocal(Radar_Entity:angles())
+        
+        holoCreate(3, HAxis:pos(), vec(0.3), Self:toWorld(ang(0, GunAng:yaw(), 0)))
+        holoAlpha(3, 0)
+        
+        holoCreate(2, VAxis:pos(), vec(0.3), Radar_Entity:angles():setRoll(0))  
+        holoAlpha(2, 0)
+    } else 
+    {
+        GunAng = Self:toLocal(Gun:angles())
+        
+        holoCreate(3, HAxis:pos(), vec(0.3), Self:toWorld(ang(0, GunAng:yaw(), 0)))
+        holoAlpha(3, 0)
+        
+        holoCreate(2, VAxis:pos(), vec(0.3), Gun:angles():setRoll(0))  
+        holoAlpha(2, 0) 
+        
+        Gun:parentTo(holoEntity(2))
+    }
+    
+    
+    VAxis:parentTo(holoEntity(2))
+    HAxis:parentTo(holoEntity(3))
+    
+    holoParent(3, Base)
+    holoParent(2, 3)
+    
+    if(VAxis2:isValid()) 
+    {
+        if(Radar_Entity:isValid()) 
+        {
+            holoCreate(4, VAxis2:pos(), vec(0.3), Radar_Entity:angles():setRoll(0))  
+            
+            holoAlpha(4, 0)   
+            holoParent(4, 3)
+            
+            VAxis2:parentTo(holoEntity(4))
+            Radar_Entity:parentTo(holoEntity(4))
+        }
+    }
+       
+    if(VAxis3:isValid()) 
+    {
+        if(MissileLauncher:isValid()) 
+        {
+            holoCreate(5, VAxis3:pos(), vec(0.3), MissileLauncher:angles():setRoll(0))  
+            
+            holoAlpha(5, 0)   
+            holoParent(5, 3)
+            
+            VAxis3:parentTo(holoEntity(5))
+            MissileLauncher:parentTo(holoEntity(5))
+        }
+    }  
+        
+    if(Gun:isValid()) 
+    {
+        Filter = Baseplate:getConnectedEntities()
+        Filter:pushEntity(Gun)
+        Filter:pushEntity(holoEntity(2))
+        Filter:pushEntity(holoEntity(3))
+            
+        StartFilterCount = Filter:count()
+            
+        print("Filtered: " + StartFilterCount)   
+    }
+
+    if(ShowDebugMuzzlePosHolo) 
+    { 
+        holoCreate(1000), 
+        holoPos(1000, Gun:toWorld(MuzzlePos)),
+        holoModel(1000, "models/sprops/misc/axis_plane.mdl") 
+        holoScale(1000, vec(12)), 
+        holoColor(1000, vec(255, 0, 0)),
+        print(holoEntity(1000):pos())
+    }
+        
+    Temp_Array = array()
+    Temp_Array_2 = array()
+        
+    function number mph_to_degrees_per_second(Angular_velocity_mph:number) 
+    {
+        local Miles_to_feet = 5280
+        local Circumference_degrees = 360
+    
+        local Velocity_fps = Angular_velocity_mph * Miles_to_feet
+    
+        local Circumference_feet = 2 * _PI * Miles_to_feet
+    
+        local Time_seconds = 3600
+    
+        local Degrees_per_second = Circumference_degrees / Time_seconds
+    
+        local Angular_velocity_deg_per_sec = ((Velocity_fps / Circumference_feet * Degrees_per_second) * (180 / _PI))
+    
+        return Angular_velocity_deg_per_sec 
+    }
+     
+    function vector array:averageVector()
+    {
+        local Total = vec()
+        
+        for(I = 1, This:count())
+        {     
+            Total = (Total + This[I, vector])
+        }
+        
+        return (Total / This:count())
+    } 
+    
+    function distance_to_index(Distance:number, Max_distance:number, Array_Count:number) {
+        local Normalized = (Distance / Max_distance)
+        
+        local Index = floor(Normalized * (Array_Count - 1)) + 1
+        
+        return min(Array_Count, max(1, Index))
+    }
+    
+    if(Is_Locked == 0) 
+    {
+        foreach(Guns_Index:number, Cur_Gun:entity=Filter) 
+        {
+            # if(Is_Topmount) { if((Cur_Gun:acfType() == Gun:acfType()) & (Cur_Gun:id() != Gun:id())) { Guns:pushEntity(Cur_Gun) } }
+            # if(!Is_Topmount) { if((Cur_Gun:type() == "acf_gun") & (Cur_Gun:id() != Gun:id())) { Guns:pushEntity(Cur_Gun) } }
+            if((Cur_Gun:acfType() == Gun:acfType()) & (Cur_Gun:id() != Gun:id())) { Guns:pushEntity(Cur_Gun) }
+            if(Guns_Index >= Filter:count()) 
+            { 
+                Is_Locked = 1
+                print("Guns Table Complete | Found: " + Guns:count():toString())
+                # Guns[1, entity] = Gun
+                break 
+            }
+        }
+    }
+
+}
+
+if(Active && ~Active) 
+{        
+    if(!Is_Topmount & Is_APS) 
+    { Is_APS = 0, print("You need to enable Is_Topmount.") }
+    
+    if(!Is_Topmount & Is_Radar_Gimbal) 
+    { Is_Radar_Gimbal = 0, print("You need to enable Is_Topmount.") }
+    
+    if(Is_Topmount & Is_APS & Is_Radar_Gimbal) 
+    { print("I recommend not having both APS and Radar Gimbal on.") }
+    
+    if(!Radar_Entity:isValid() & Is_Radar_Gimbal) 
+    { print("You need to wire Radar_Entity to your targeting radar.") }
+    
+    StartFilterCount = Filter:count()
+    
+    print("Filtered: " + StartFilterCount)
+
+    RotatedSpeed_Divided = (RotateSpeed / 20)
+    Unlock = 0
+    
+    TarPos = vec(0)
+    GunPos = vec(0)
+    
+    FireOut = 0
+    
+    if(!Gun:isValid() & Radar_Entity:isValid()) 
+    {
+        GunAngles = Radar_Entity:angles()  
+    } else { GunAngles = Gun:angles() }
+    
+    # if(Baseplate:isValid()) { BaseAngles = Baseplate:angles() } 
+    # else { print("Please wire Baseplate to the actual baseplate") }
+        
+    if(!Is_Topmount) 
+    {
+        FOV = 120
+    
+        local Temp_Holo_3 = holoEntity(3)
+        
+        Camera_Data = table()
+        Camera_Data:pushTable(table(Base, CamDistance, Position))
+        Camera_Data:pushTable(table(Temp_Holo_3, GunnerDis, GunnerPos))
+        Camera_Data:pushTable(table(Temp_Holo_3, CommanderDis, CommanderPos))
+        
+        print("Camera Data Count: " + Camera_Data:count())
+
+        Cam["FilterEntities", array] = Filter
+        Cam["Position", vector] = Position
+        Cam["Parent", entity] = Base
+        Cam["Activated", number] = Active
+        Cam["Distance", number] = CamDistance 
+    }
+        
+    Stabilise_Boost = 0
+    
+    Interval = 100 
+    
+    CamMode = 1
+    
+    T = 0
+    
+    Auto_Lock_Mode = 0
+    Is_Locking_Onto_PrevAimPos = 0
+    Ballistics_State = Default_Ballistics_State
+    
+    HAxis:propNotSolid(0)
+    VAxis:propNotSolid(0)
+    VAxis2:propNotSolid(0)
+    
+    Filtered_Missiles_Pos_Array = array()
+    Filtered_Missiles_Vel_Array = array()
+    
+    Temp_Array = array()
+    Temp_Array_2 = array()
+              
+    interval(Interval)
+}
+
+if(Active) 
+{
+    if(!Gun:isValid()) { Gun = Guns[1, entity], Guns:remove(1) }
+    
+    
+    if(Toggle_Auto_Lock && ~Toggle_Auto_Lock)
+    {  
+        Auto_Lock_Mode = !Auto_Lock_Mode
+        
+        print("Auto Lock Status: " + Auto_Lock_Mode)
+         interval(Interval)
+    }
+    
+#[    if(Force_Auto_Lock && ~Force_Auto_Lock)
+    {  
+        Auto_Lock_Mode = Force_Auto_Lock
+        interval(Interval)
+    }]#
+    
+    if(!Is_Topmount) 
+    {
+        if(changed(FOV))
+        { Cam["FOV", number] = FOV }
+    
+        if(Light && ~Light) 
+        { CamMode = CamMode + 1, interval(Interval) }  
+        
+        if(CamMode > 3) { CamMode = 1 }
+         
+        if(changed(CamMode))
+        { 
+            Cam["Parent", entity] = Camera_Data[CamMode, table][1, entity]
+            Cam["Distance", number] = Camera_Data[CamMode, table][2, number]
+            Cam["Position", vector] = Camera_Data[CamMode, table][3, vector]
+        }
+    }
+    
+    if(!Is_Radar_Gimbal) 
+    {
+        
+        if(MuzzleVel && ~MuzzleVel) 
+        { 
+            print("MuzzleVel: " + MuzzleVel)
+        }  
+        
+        if(Gun:acfMuzzleVel() && changed(Gun:acfMuzzleVel())) 
+        { 
+            print("MuzzleVel Changed: " + Gun:acfMuzzleVel())
+            print("Previous: " + MuzzleVel)
+            
+            MuzzleVel = Gun:acfMuzzleVel()
+            
+            print("Current: " + MuzzleVel)
+        }
+        
+        if(Ballistics_Toggle && ~Ballistics_Toggle)
+        {  
+            Ballistics_State = !Ballistics_State
+            
+            print("Ballistics Status: " + Ballistics_State)
+        }
+        
+        if(Lock_On_AimPos_Bind && ~Lock_On_AimPos_Bind)
+        {  
+            Is_Locking_Onto_PrevAimPos = !Is_Locking_Onto_PrevAimPos
+            
+            PrevAimPos = HitPos
+            
+            print("Lock Tracking Status: " + Is_Locking_Onto_PrevAimPos)
+        }        
+    }
+        
+    if(PrevWeapon & !Is_Topmount) 
+    { FOV = max(lerp(FOV, FOV/2, 0.7), 1) }
+    
+    elseif(NextWeapon & !Is_Topmount) 
+    { FOV = min(lerp(FOV, FOV*2, 0.7), 120)}
+    
+    elseif(R && ~R)
+    {
+        if ( Unlock ) { Unlock = 0 }
+        else { Unlock = 1, interval(Interval) }
+    }   
+} elseif(!Active) { Unlock = 0, interval(Interval) }
+
+if ( Unlock & clk() ) {
+    
+    local Cam_HitPos = Cam["HitPos", vector] 
+        
+    if(!Is_Topmount) 
+    {
+        local Temp_Cam_Pos = Camera_Data[CamMode, table][1, entity]:toWorld(Camera_Data[CamMode, table][3, vector])
+        
+        rangerPersist(0)
+        rangerFilter(Filter)
+        rangerPersist(1)
+        local Temp_Ranger_Cam = rangerOffset(50000, Temp_Cam_Pos, (Cam_HitPos - Temp_Cam_Pos):normalized())
+                    
+        Cam["Trace", ranger] = Temp_Ranger_Cam
+        
+        Trace = Temp_Ranger_Cam
+        HitPos = Trace:pos()
+    } elseif(Is_Topmount) 
+    {
+        local Temp_Cam_Pos = Cam["CamPos", vector]
+        
+        rangerPersist(0)
+        rangerFilter(Filter)
+        rangerPersist(1)
+        local Temp_Ranger_Cam = rangerOffset(50000, Temp_Cam_Pos, (Cam_HitPos - Temp_Cam_Pos):normalized())
+                    
+        Cam["Trace", ranger] = Temp_Ranger_Cam
+        
+        Trace = Temp_Ranger_Cam
+        HitPos = Trace:pos()
+    } else { print("Tf did you do") }
+       
+    # if(Targets_Pos_Array:count() && changed(Targets_Pos_Array:count())) { Temp_Array = array() }
+    # if(!Targets_Pos_Array:count() && changed(Targets_Pos_Array:count())) { Temp_Array = array() }
+     
+    if(!Is_Radar_Gimbal) 
+    { 
+        
+        local DT = (Interval / 1000)
+        
+        Filtered_Missiles_Pos_Array = array()
+        Filtered_Missiles_Vel_Array = array()
+    
+        if(Missile_Radar_Entities:count()) 
+        {
+            local Temp_Index = 0
+            
+            foreach(_:number, V:entity=Missile_Radar_Entities) 
+            { Temp_Index = (Temp_Index + 1)
+                if(V:owner():id() != entity():owner():id()) 
+                { 
+                    Filtered_Missiles_Pos_Array:pushVector(V:pos()) 
+                    Filtered_Missiles_Vel_Array:pushVector(Missile_Radar_Velocities[Temp_Index, vector])
+                }
+                
+                if(Temp_Index >= Missile_Radar_Entities:count()) { break }
+            }
+        } else 
+        {
+            Filtered_Missiles_Pos_Array = array()
+            Filtered_Missiles_Vel_Array = array()           
+        }
+        
+        local Temp_Ranger = rangerOffset(50000, Gun:boxCenterW(), Gun:forward())
+        local Temp_HitPos = Temp_Ranger:pos()
+        local Temp_Dist = Trace:distance()
+        
+        ###############################################################
+        
+        local Prev_GunAngles = GunAngles      
+        GunAngles = Gun:angles()      
+    
+        local Gun_AngularVelocity = ((Prev_GunAngles - GunAngles) / DT)
+        local Gun_AngularVelocity_Yaw = abs(Gun_AngularVelocity:yaw())
+        
+        ###############################################################
+               
+        local Baseplate_Pos = Baseplate:pos()
+        
+        ###############################################################
+        
+        local BasePlate_Vel = Baseplate:vel()
+        local BasePlate_Ang_Vel_Vec = Baseplate:angVelVector()
+        
+        ###############################################################
+        
+        local BasePlate_Ang_Vel = Baseplate:angVel()
+        local BasePlate_Ang_Vel_Yaw = BasePlate_Ang_Vel:yaw()
+
+        local TimeToTarget = T
+        
+        local YawRate = Baseplate:angVel():yaw()
+        local YawDisplacement = (YawRate * DT) # * TimeToTarget
+        
+        local TargetVector = (HitPos - Baseplate_Pos):setZ(0)
+        local CompensatedVector = TargetVector:rotateAroundAxis(Self:up(), -YawDisplacement)
+        
+        # local RotationalDrift = ((CompensatedVector - TargetVector) / 39.37)
+        local RotationalDrift = ((CompensatedVector - TargetVector) * TimeToTarget)
+        
+        # print(round(RotationalDrift))
+                
+        if(Stabilizer_Multiplier) 
+        {
+            if(abs(BasePlate_Ang_Vel_Yaw) > Gun_AngularVelocity_Yaw) 
+            { Stabilise_Boost = mph_to_degrees_per_second(abs(BasePlate_Ang_Vel_Vec:length() / 17.6)) * Stabilizer_Multiplier }
+            elseif(abs(BasePlate_Ang_Vel_Yaw) < Gun_AngularVelocity_Yaw)  
+            { Stabilise_Boost = 0 } else { Stabilise_Boost = 0 } 
+        } else { Stabilise_Boost = 0 } 
+        
+        True_RotateSpeed = abs(RotatedSpeed_Divided + Stabilise_Boost)
+        # print(vec(round(True_RotateSpeed), round(Stabilise_Boost), RotatedSpeed_Divided))
+
+        if(!Filtered_Missiles_Pos_Array:count() && changed(Filtered_Missiles_Pos_Array:count())) { Gun:acfFire(0) }
+        
+        if((Targets_Pos_Array:count() == 0) & Auto_Lock_Mode) { Auto_Lock_Mode = 0, print("NO TARGET: ", Auto_Lock_Mode) }
+        
+        # if((Auto_Lock_Mode > 0) | ((Filtered_Missiles_Pos_Array:count() > 0) & Is_Topmount & Is_APS))
+        if(!Is_Locking_Onto_PrevAimPos) 
+        {
+            if((Auto_Lock_Mode) | ((Filtered_Missiles_Pos_Array:count() > 0) & Is_Topmount & Is_APS))
+            {
+                  
+                if(Filtered_Missiles_Pos_Array:count()) 
+                {                 
+                    TarPos = Filtered_Missiles_Pos_Array:averageVector()  
+                    TarVel = Filtered_Missiles_Vel_Array:averageVector() 
+                    
+                    Gun:acfFire(1)
+                    FireOut = 1
+                    
+                } elseif(!Filtered_Missiles_Pos_Array:count())
+                {
+                    TarPos = Targets_Pos_Array:averageVector()  
+                    TarVel = (Radar_Velocities:count() > 0) ? Radar_Velocities:averageVector() : TarVel_Input
+                    # print(TarVel)
+                    if(FireIn) { FireOut = 1 } else { FireOut = 0 }
+                }
+                      
+                Slope = 0.87
+                Intercept = 0.68  
+                         
+                GunPos = Gun:pos()
+                           
+                Dist = (GunPos:distance(TarPos))
+                
+                # T = ((Dist * 1.27) / (MuzzleVel * 39.3701))
+    
+                local Temp_Index_2 = round(distance_to_index(Dist, 50000, Ballistics_Table_Elevation_Array[Gun:acfAmmoType(), table]:count()))
+                local True_Drop = Ballistics_Table_Elevation_Array[Gun:acfAmmoType(), table][Temp_Index_2, number]
+                
+                T = Ballistics_Table_Travel_Time_Array[Gun:acfAmmoType(), table][Temp_Index_2, number]
+                
+                # FuseTime = T
+                
+                Drift = ((BasePlate_Vel * T) * Ballistics_State)
+                local R_Drift = (RotationalDrift * Ballistics_State)
+               
+                Drop = (True_Drop * Ballistics_State)
+                                
+                # GunDir = (((HitPos + vec(0, 0, Drop)) - Drift) - Gun:boxCenterW() ):normalized()
+                
+                Coef = Dist * Slope / 10000 + Intercept
+                
+                Lead = (TarVel * Coef * T)
+                
+                GunDir = ((TarPos + Lead) + (vec(R_Drift:x(), R_Drift:y(), Drop) - Drift) - Gun:pos()):normalized()   
+                # GunDir = (TarPos + (vec(R_Drift:x(), R_Drift:y(), Drop) - Drift) - Gun:pos()):normalized()   
+                
+                AimPos = (TarPos - Lead + vec(0,0,-Drop) + Drift) 
+                # AimPos = (TarPos + vec(0,0,Drop)) 
+                
+                GunAng = angnorm(
+                clamp(GunAng - clamp(
+                heading(
+                vec(), 
+                GunAng, 
+                Self:toLocalAxis(GunDir)), 
+                -(True_RotateSpeed), 
+                True_RotateSpeed), 
+                ang(-MaxElevation,-MinYaw, 0), 
+                ang(MaxDepression, MaxYaw, 0))
+                )
+                
+                GunYaw = Self:toWorld(ang(0, clamp(GunAng:yaw(), -MinYaw, MaxYaw), 0))
+                GunPitch = ang(clamp(GunAng:pitch(), -MaxElevation, MaxDepression), 0, 0)
+                
+                holoAng(3, GunYaw)
+                holoAng(2, holoEntity(3):toWorld(GunPitch))
+                
+                if(VAxis2) 
+                {
+                    holoAng(4, holoEntity(3):toWorld(GunPitch))
+                }
+                
+                if(VAxis3) 
+                {
+                    holoAng(5, holoEntity(3):toWorld(GunPitch))
+                }
+                          
+            } else # elseif(!Auto_Lock_Mode & !Filtered_Missiles_Pos_Array:count()) 
+            { if(FireIn) { FireOut = 1 } else { FireOut = 0 }
+                # T = (((Temp_Dist * 1.27) / 39.3701) / MuzzleVel) 
+    
+                local Temp_Index_2 = round(distance_to_index(Temp_Dist, 50000, Ballistics_Table_Elevation_Array[Gun:acfAmmoType(), table]:count()))
+                local True_Drop = Ballistics_Table_Elevation_Array[Gun:acfAmmoType(), table][Temp_Index_2, number]
+                
+                T = Ballistics_Table_Travel_Time_Array[Gun:acfAmmoType(), table][Temp_Index_2, number]
+    
+                Drift = ((BasePlate_Vel * T) * Ballistics_State)
+                local R_Drift = (RotationalDrift * Ballistics_State)
+                
+                GunPos = Gun:pos()
+                Dist = (GunPos:distance(Temp_HitPos))
+            
+                # print(R_Drift)
+                Drop = (True_Drop * Ballistics_State)
+                
+                AimPos = (Temp_HitPos + vec(0,0,-Drop) + Drift)        
+                
+                # GunDir = ((((HitPos + vec(0, 0, Drop)) - Drift) - RotationalDrift) - Gun:boxCenterW() ):normalized()
+                GunDir = ((HitPos + (vec(R_Drift:x(), R_Drift:y(), Drop) - Drift)) - Gun:pos()):normalized()
+        
+                # holoCreate(-1, HitPos-Drift)
+                # holoCreate(-2, HitPos+R_Drift)
+                # holoColor(-1, vec(255, 0, 0))
+        
+                GunAng = angnorm(
+                clamp(GunAng - clamp(
+                heading(
+                vec(), 
+                GunAng, 
+                Self:toLocalAxis(GunDir)), 
+                -(True_RotateSpeed), 
+                True_RotateSpeed), 
+                ang(-MaxElevation,-MinYaw, 0), 
+                ang(MaxDepression, MaxYaw, 0))
+                )
+                
+                GunYaw = Self:toWorld(ang(0, clamp(GunAng:yaw(), -MinYaw, MaxYaw), 0))
+                GunPitch = ang(clamp(GunAng:pitch(), -MaxElevation, MaxDepression), 0, 0)
+                
+                holoAng(3, GunYaw)
+                holoAng(2, holoEntity(3):toWorld(GunPitch))
+                
+                if(VAxis2) 
+                {
+                    holoAng(4, holoEntity(3):toWorld(GunPitch))
+                }
+                
+                if(VAxis3) 
+                {
+                    holoAng(5, holoEntity(3):toWorld(GunPitch))
+                }
+                            
+            }  
+        } elseif(Is_Locking_Onto_PrevAimPos) 
+        { if(FireIn) { FireOut = 1 } else { FireOut = 0 }
+                # T = (((Temp_Dist * 1.27) / 39.3701) / MuzzleVel) 
+    
+                local Temp_Index_2 = round(distance_to_index(Temp_Dist, 50000, Ballistics_Table_Elevation_Array[Gun:acfAmmoType(), table]:count()))
+                local True_Drop = Ballistics_Table_Elevation_Array[Gun:acfAmmoType(), table][Temp_Index_2, number]
+                
+                T = Ballistics_Table_Travel_Time_Array[Gun:acfAmmoType(), table][Temp_Index_2, number]
+    
+                Drift = ((BasePlate_Vel * T) * Ballistics_State)
+                local R_Drift = (RotationalDrift * Ballistics_State)
+                
+                GunPos = Gun:pos()
+                Dist = (GunPos:distance(PrevAimPos))
+            
+                # print(R_Drift)
+                Drop = (True_Drop * Ballistics_State)
+                
+                AimPos = (PrevAimPos + vec(0,0,-Drop) + Drift)        
+                
+                # GunDir = ((((HitPos + vec(0, 0, Drop)) - Drift) - RotationalDrift) - Gun:boxCenterW() ):normalized()
+                GunDir = ((PrevAimPos + (vec(R_Drift:x(), R_Drift:y(), Drop) - Drift)) - Gun:pos()):normalized()
+        
+                # holoCreate(-1, HitPos-Drift)
+                # holoCreate(-2, HitPos+R_Drift)
+                # holoColor(-1, vec(255, 0, 0))
+        
+                GunAng = angnorm(
+                clamp(GunAng - clamp(
+                heading(
+                vec(), 
+                GunAng, 
+                Self:toLocalAxis(GunDir)), 
+                -(True_RotateSpeed), 
+                True_RotateSpeed), 
+                ang(-MaxElevation,-MinYaw, 0), 
+                ang(MaxDepression, MaxYaw, 0))
+                )
+                
+                GunYaw = Self:toWorld(ang(0, clamp(GunAng:yaw(), -MinYaw, MaxYaw), 0))
+                GunPitch = ang(clamp(GunAng:pitch(), -MaxElevation, MaxDepression), 0, 0)
+                
+                holoAng(3, GunYaw)
+                holoAng(2, holoEntity(3):toWorld(GunPitch))
+                
+                if(VAxis2) 
+                {
+                    holoAng(4, holoEntity(3):toWorld(GunPitch))
+                }
+                
+                if(VAxis3) 
+                {
+                    holoAng(5, holoEntity(3):toWorld(GunPitch))
+                }
+            
+        }
+    } elseif(Is_Radar_Gimbal) 
+    { if(!Radar_Entity:isValid() & Is_Radar_Gimbal) 
+        { print("You need to wire Radar_Entity to your targeting radar."), Is_Radar_Gimbal = 0 }
+        else 
+        { 
+            if((Targets_Pos_Array:count() == 0) & Auto_Lock_Mode) { Auto_Lock_Mode = 0, print("NO TARGET: ", Auto_Lock_Mode) }
+            
+            if(Targets_Pos_Array:count() & Auto_Lock_Mode)
+            {
+                # if(Targets_Pos_Array:count() > 1) { TarPos = Targets_Pos_Array:averageVector() }
+                # if(Targets_Pos_Array:count() == 1) { TarPos = Temp_Array:averageSingleVector(Targets_Pos_Array[1, vector], 10) }
+                 
+                # TarPos = Targets_Pos_Array:averageVector()
+                
+                local OPos = Targets_Pos_Array:averageVector() # + Radar_Velocities:averageVector()
+                
+                # GunDir = (TarPos - Radar_Entity:pos()):normalized()
+                
+                GunDir = (OPos - Radar_Entity:pos()):normalized()
+            }
+            
+            elseif(!Auto_Lock_Mode | !Targets_Pos_Array:count())
+            {
+                
+                GunDir = (HitPos - Radar_Entity:pos()):normalized()  
+            }
+          
+            # GunAng = angnorm(clamp(GunAng - clamp(heading(vec(), GunAng, Self:toLocalAxis(GunDir)), -(abs(RotateSpeed+Stabilise_Boost)), abs(RotateSpeed+Stabilise_Boost)), ang(-MaxElevation,-MinYaw, 0), ang(MaxDepression, MaxYaw, 0)))
+            # GunAng = angnorm(clamp(GunAng - clamp(heading(vec(), GunAng, Self:toLocalAxis(GunDir)), -True_RotateSpeed, True_RotateSpeed), ang(-MaxElevation,-MinYaw, 0), ang(MaxDepression, MaxYaw, 0)))
+            GunAng = angnorm(clamp(GunAng - clamp(heading(vec(), GunAng, Self:toLocalAxis(GunDir)), -RotatedSpeed_Divided, RotatedSpeed_Divided), ang(-MaxElevation,-MinYaw, 0), ang(MaxDepression, MaxYaw, 0)))
+            
+            GunYaw = Self:toWorld(ang(0, clamp(GunAng:yaw(), -MinYaw, MaxYaw), 0))
+            GunPitch = ang(clamp(GunAng:pitch(), -MaxElevation, MaxDepression), 0, 0)
+            
+            holoAng(3, GunYaw)
+            holoAng(2, holoEntity(3):toWorld(GunPitch))
+            
+            if(VAxis2) 
+            {
+                holoAng(4, holoEntity(3):toWorld(GunPitch))
+            }
+            
+            if(VAxis3) 
+            {
+                holoAng(5, holoEntity(3):toWorld(GunPitch))
+            }
+            
+        }        
+    }
+           
+    interval(Interval)
+    
+    OpsCPUus = vec2(ops(), cpuUsage()*1000000)
+    # print(OpsCPUus)
+} else 
+{ interval(Interval) }
