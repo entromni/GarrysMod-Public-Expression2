@@ -1,0 +1,115 @@
+@name Color Changing Chip
+@persist CommandPrefix:string Components:array Blacklist:table
+
+if(first() || dupefinished() || duped()) 
+
+{
+
+CommandPrefix = "%"
+
+Components = entity():getConnectedEntities()
+
+Blacklist = table(
+"models/sprops/trans/miscwheels/tank30.mdl"=1, 
+"models/sprops/trans/misc/antenna_96.mdl"=2, 
+"models/sprops/trans/misc/antenna_64.mdl"=3, 
+"models/sprops/trans/misc/antenna_32.mdl"=4)
+
+}
+
+event chat(Ply:entity, Said:string, _:number) {
+
+     Param1 = Said:explode(" ")[1, string]
+     Param2 = Said:explode(" ")[2, string]
+
+    if(Ply==owner() ? 1 : 0 ) { 
+        if(Param1 == CommandPrefix+"SetColor") {
+            if(Param2 == "Desert") {
+
+                foreach(_:number, V:entity=Components) {
+                    if(!Blacklist[V:model(), number]) 
+                    {
+                        if(V:type() == "prop_physics"|V:type() == "primitive_shape"|V:type() == "acf_gun"|V:type() == "acf_radar"|V:type() == "acf_rack") { V:setColor(vec(255, 240, 200)) } # vec(255, 240, 200) vec(143, 135, 121)
+                        # if(V:type() == "sent_prop2mesh") { V:p2mSetColor(vec(255, 240, 200)), V:p2mSetColor(2, vec(255, 240, 200)), V:p2mSetColor(3, vec(255, 240, 200)), V:p2mSetColor(4, vec(255, 240, 200)) }
+                        if(V:type() == "sent_prop2mesh") { for(I=1, V:p2mGetCount(), 1) { V:p2mSetColor(I, vec(255, 240, 200)) } }
+                    }
+                }
+        }   if(Param2 == "Forest") {
+
+                foreach(_:number, V:entity=Components) {
+                    if(!Blacklist[V:model(), number]) 
+                    {
+                        if(V:type() == "prop_physics"|V:type() == "primitive_shape"|V:type() == "acf_gun"|V:type() == "acf_radar"|V:type() == "acf_rack") { V:setColor(vec(73, 96, 61)) }
+                        # if(V:type() == "sent_prop2mesh") { V:p2mSetColor(vec(73, 96, 61)), V:p2mSetColor(2, vec(73, 96, 61)), V:p2mSetColor(3, vec(73, 96, 61)), V:p2mSetColor(4, vec(73, 96, 61)) }
+                        if(V:type() == "sent_prop2mesh") { for(I=1, V:p2mGetCount(), 1) { V:p2mSetColor(I, vec(73, 96, 61)) } }
+                    }
+                }
+        }   if(Param2 == "Forest2") {
+
+                foreach(_:number, V:entity=Components) {
+                    if(!Blacklist[V:model(), number]) 
+                    {
+                        if(V:type() == "prop_physics"|V:type() == "primitive_shape"|V:type() == "acf_gun"|V:type() == "acf_radar"|V:type() == "acf_rack") { V:setColor(vec(115, 119, 59)) }
+                        # if(V:type() == "sent_prop2mesh") { V:p2mSetColor(vec(73, 96, 61)), V:p2mSetColor(2, vec(73, 96, 61)), V:p2mSetColor(3, vec(73, 96, 61)), V:p2mSetColor(4, vec(73, 96, 61)) }
+                        if(V:type() == "sent_prop2mesh") { for(I=1, V:p2mGetCount(), 1) { V:p2mSetColor(I, vec(115, 119, 59)) } }
+                    }
+                }
+        }   if(Param2 == "Urban") {
+
+                foreach(_:number, V:entity=Components) {
+                    if(!Blacklist[V:model(), number]) 
+                    {
+                        if(V:type() == "prop_physics"|V:type() == "primitive_shape"|V:type() == "acf_gun"|V:type() == "acf_radar"|V:type() == "acf_rack") { V:setColor(vec(108, 108, 108)) }
+                        # if(V:type() == "sent_prop2mesh") { V:p2mSetColor(vec(108, 108, 108)), V:p2mSetColor(2, vec(108, 108, 108)) , V:p2mSetColor(3, vec(108, 108, 108)) , V:p2mSetColor(4, vec(108, 108, 108)) }
+                        if(V:type() == "sent_prop2mesh") { for(I=1, V:p2mGetCount(), 1) { V:p2mSetColor(I, vec(108, 108, 108)) } }
+                    }
+                }
+        }   if(Param2 == "None") {
+
+                foreach(_:number, V:entity=Components) {
+                    if(!Blacklist[V:model(), number]) 
+                    {
+                    if(V:type() == "prop_physics"|V:type() == "primitive_shape"|V:type() == "acf_gun"|V:type() == "acf_radar"|V:type() == "acf_rack") { V:setColor(vec(255, 255, 255)) }
+                    # if(V:type() == "sent_prop2mesh") { V:p2mSetColor(vec(255, 255, 255)) }
+                    if(V:type() == "sent_prop2mesh") { for(I=1, V:p2mGetCount(), 1) { V:p2mSetColor(I, vec(255, 255, 255)) } }
+                    }
+                }
+        }
+
+        hideChat(1)
+        print("Changed color to: "+Param2)
+        }
+
+    if(Ply==owner() ? 1 : 0 ) { 
+        if(Param1 == CommandPrefix+"SetMat") {
+            if(Param2 == "Default") {
+
+                foreach(_:number, V:entity=Components) {
+                    if(!Blacklist[V:model(), number]) 
+                    {
+                        if(V:type() == "prop_physics"|V:type() == "primitive_shape") { V:setMaterial("models/props_debris/plasterwall034a") }
+                        if(V:type() == "sent_prop2mesh") { V:p2mSetMaterial("models/props_debris/plasterwall034a") }
+                    }
+                }
+        } if(Param2 == "Newer") {
+
+                foreach(_:number, V:entity=Components) {
+                    if(!Blacklist[V:model(), number]) 
+                    {
+                        if(V:type() == "prop_physics"|V:type() == "primitive_shape") { V:setMaterial("models/debug/debugwhite") }
+                        if(V:type() == "sent_prop2mesh") { V:p2mSetMaterial("models/debug/debugwhite") }
+                    }
+                }
+        }
+
+        hideChat(1)
+        print("Changed material to: "+Param2)
+            }
+
+        }
+
+    }
+
+}
+
+
